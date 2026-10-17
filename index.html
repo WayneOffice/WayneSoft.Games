@@ -1137,8 +1137,12 @@
       clearChallengeClock();
       isFeedbackPending = false;
       gameState.selectedLevelId = firstPlayableLevelId();
-      renderLevelMap();
+      // showScreen must come BEFORE renderLevelMap: the map is display:none
+      // until then, and scrollIntoView silently does nothing inside a hidden
+      // subtree — which would leave the star map showing nodes 1-6 while the
+      // detail card describes level 10.
       showScreen(SCREEN_MAP);
+      renderLevelMap();
     }
 
     const KEYPAD_DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
