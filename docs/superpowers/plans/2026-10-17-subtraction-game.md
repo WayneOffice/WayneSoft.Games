@@ -1309,7 +1309,6 @@ git commit -m "feat: 进度模型与输入规则"
 `<style>` 仍保持为空，Task 10 填。
 
 ```html
-<body>
   <button id="mute-toggle" type="button" class="mute-toggle" aria-label="音效开关">🔊</button>
 
   <main id="screen-map" class="screen">
