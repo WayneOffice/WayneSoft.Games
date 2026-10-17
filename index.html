@@ -881,9 +881,7 @@
     // both blocks share the page's global scope and a second definition would
     // silently overwrite the one the demo generator uses.
     function buildStrongHintText(question) {
-      const subtrahendOnes = question.b >= MIN_TWO_DIGIT_NUMBER
-        ? question.b % ONES_PER_TEN
-        : question.b;
+      const subtrahendOnes = subtrahendOnesDigit(question.b);
       if (!needsBorrowing(question.a, question.b)) {
         return HINT_PLAIN_TEXT;
       }
