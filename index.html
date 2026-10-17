@@ -246,6 +246,116 @@
     function formatQuestion(question) {
       return `${question.a} − ${question.b} = ?`;
     }
+
+    const DEMO_STRATEGY = {
+      PLACE_VALUE: 'placeValue',
+      BREAK_TEN: 'breakTen',
+      FLATTEN_TEN: 'flattenTen',
+      SPLIT_SUBTRAHEND: 'splitSubtrahend',
+    };
+
+    const PLACE_LABEL_ONES = '个位';
+    const PLACE_LABEL_TENS = '十位';
+    const PLACE_LABEL_COMBINE = '合起来';
+
+    function subtrahendOnesDigit(b) {
+      return b >= MIN_TWO_DIGIT_NUMBER ? onesDigit(b) : b;
+    }
+
+    function needsBorrowing(a, b) {
+      return onesDigit(a) < subtrahendOnesDigit(b);
+    }
+
+    function selectDemoStrategy(a, b) {
+      if (!needsBorrowing(a, b)) {
+        return DEMO_STRATEGY.PLACE_VALUE;
+      }
+      if (b >= MIN_TWO_DIGIT_NUMBER) {
+        return DEMO_STRATEGY.SPLIT_SUBTRAHEND;
+      }
+      if (a <= MAX_TEEN_MINUEND || onesDigit(a) === 0) {
+        return DEMO_STRATEGY.BREAK_TEN;
+      }
+      return DEMO_STRATEGY.FLATTEN_TEN;
+    }
+
+    function buildPlaceValueSteps(a, b) {
+      const minuendOnes = onesDigit(a);
+      const minuendTens = Math.floor(a / ONES_PER_TEN);
+      const subtrahendTens = Math.floor(b / ONES_PER_TEN);
+      const onesResult = minuendOnes - subtrahendOnesDigit(b);
+      const steps = [
+        `${PLACE_LABEL_ONES}：${minuendOnes} − ${subtrahendOnesDigit(b)} = ${onesResult}`,
+      ];
+      let tensResult = minuendTens;
+      if (subtrahendTens > 0) {
+        tensResult = minuendTens - subtrahendTens;
+        steps.push(`${PLACE_LABEL_TENS}：${minuendTens} − ${subtrahendTens} = ${tensResult}`);
+      }
+      steps.push(
+        `${PLACE_LABEL_COMBINE}：${tensResult * ONES_PER_TEN} + ${onesResult} = ${a - b}`,
+      );
+      return { steps, result: a - b };
+    }
+
+    function buildBreakTenSteps(a, b) {
+      const remainderOfTen = ONES_PER_TEN - b;
+      const remainingTens = a - ONES_PER_TEN;
+      return {
+        steps: [
+          `${ONES_PER_TEN} − ${b} = ${remainderOfTen}`,
+          `${remainingTens} + ${remainderOfTen} = ${a - b}`,
+        ],
+        result: a - b,
+      };
+    }
+
+    function buildFlattenTenSteps(a, b) {
+      const strippedOnes = onesDigit(a);
+      const roundTen = a - strippedOnes;
+      const remainingSubtrahend = b - strippedOnes;
+      return {
+        steps: [
+          `${a} − ${strippedOnes} = ${roundTen}`,
+          `${roundTen} − ${remainingSubtrahend} = ${a - b}`,
+        ],
+        result: a - b,
+      };
+    }
+
+    function buildNestedSteps(intermediate, subtrahend) {
+      if (subtrahend === 0) {
+        return [];
+      }
+      return buildDemoSteps(intermediate, subtrahend).steps;
+    }
+
+    function buildSplitSubtrahendSteps(a, b) {
+      const wholeTens = Math.floor(b / ONES_PER_TEN) * ONES_PER_TEN;
+      const intermediate = a - wholeTens;
+      return {
+        steps: [
+          `${a} − ${wholeTens} = ${intermediate}`,
+          ...buildNestedSteps(intermediate, b - wholeTens),
+        ],
+        result: a - b,
+      };
+    }
+
+    function buildDemoSteps(a, b) {
+      switch (selectDemoStrategy(a, b)) {
+        case DEMO_STRATEGY.PLACE_VALUE:
+          return buildPlaceValueSteps(a, b);
+        case DEMO_STRATEGY.BREAK_TEN:
+          return buildBreakTenSteps(a, b);
+        case DEMO_STRATEGY.FLATTEN_TEN:
+          return buildFlattenTenSteps(a, b);
+        case DEMO_STRATEGY.SPLIT_SUBTRAHEND:
+          return buildSplitSubtrahendSteps(a, b);
+        default:
+          throw new Error(`Unknown demo strategy for ${a} - ${b}`);
+      }
+    }
   </script>
 
   <script id="game-ui">
