@@ -622,6 +622,8 @@
       wrongQuestions: [],
       retryQueue: [],
       isRetrying: false,
+      weakHintTimerId: null,
+      strongHintTimerId: null,
     };
 
     function elementById(id) {
@@ -762,6 +764,7 @@
       gameState.currentInput = '';
       renderQuestion();
       renderKeypad();
+      startHintTimers();
     }
 
     function beginRetryRound() {
@@ -804,6 +807,7 @@
     function renderQuestion() {
       renderQuestionText();
       elementById('question-text').classList.remove(FEEDBACK_CLASS_CORRECT, FEEDBACK_CLASS_WRONG);
+      elementById('question-area').classList.remove(WEAK_HINT_CLASS, STRONG_HINT_CLASS);
       elementById('hint-text').textContent = '';
       if (gameState.isRetrying) {
         elementById('question-counter').textContent = '错题重练';
@@ -866,6 +870,50 @@
       indicator.classList.toggle('is-visible', isVisible);
     }
 
+    const WEAK_HINT_DELAY_MS = 15 * 1000;
+    const STRONG_HINT_DELAY_MS = 30 * 1000;
+    const WEAK_HINT_CLASS = 'is-weak-hint';
+    const STRONG_HINT_CLASS = 'is-strong-hint';
+    const HINT_BORROW_TEMPLATE = '个位 {ones} 减 {subtrahendOnes} 不够减，要向十位借 1 个十';
+    const HINT_PLAIN_TEXT = '先算个位，再算十位';
+
+    // needsBorrowing lives in the game-logic block; do not redefine it here —
+    // both blocks share the page's global scope and a second definition would
+    // silently overwrite the one the demo generator uses.
+    function buildStrongHintText(question) {
+      const subtrahendOnes = question.b >= MIN_TWO_DIGIT_NUMBER
+        ? question.b % ONES_PER_TEN
+        : question.b;
+      if (!needsBorrowing(question.a, question.b)) {
+        return HINT_PLAIN_TEXT;
+      }
+      return HINT_BORROW_TEMPLATE
+        .replace('{ones}', String(onesDigit(question.a)))
+        .replace('{subtrahendOnes}', String(subtrahendOnes));
+    }
+
+    function showWeakHint() {
+      elementById('question-area').classList.add(WEAK_HINT_CLASS);
+    }
+
+    function showStrongHint() {
+      elementById('question-area').classList.add(STRONG_HINT_CLASS);
+      elementById('hint-text').textContent = buildStrongHintText(gameState.currentQuestion);
+    }
+
+    function clearHintTimers() {
+      window.clearTimeout(gameState.weakHintTimerId);
+      window.clearTimeout(gameState.strongHintTimerId);
+      gameState.weakHintTimerId = null;
+      gameState.strongHintTimerId = null;
+    }
+
+    function startHintTimers() {
+      clearHintTimers();
+      gameState.weakHintTimerId = window.setTimeout(showWeakHint, WEAK_HINT_DELAY_MS);
+      gameState.strongHintTimerId = window.setTimeout(showStrongHint, STRONG_HINT_DELAY_MS);
+    }
+
     function flashQuestion(feedbackClass) {
       const questionText = elementById('question-text');
       questionText.classList.remove(FEEDBACK_CLASS_CORRECT, FEEDBACK_CLASS_WRONG);
@@ -901,6 +949,7 @@
       }
       const question = gameState.currentQuestion;
       const isCorrect = Number(gameState.currentInput) === question.a - question.b;
+      clearHintTimers();
       if (isCorrect) {
         handleCorrectAnswer();
       } else {
