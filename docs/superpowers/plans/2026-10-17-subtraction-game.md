@@ -1460,7 +1460,6 @@ git commit -m "feat: 进度模型与输入规则"
     }
 
     function goToLevelMap() {
-      clearFeedbackTimeout();
       renderLevelMap();
       showScreen(SCREEN_MAP);
     }
@@ -1481,8 +1480,8 @@ Run: 在浏览器里打开 `index.html`（Windows 上直接双击）。
 Expected:
 - 看到「100 以内减法闯关」标题与 10 张关卡卡片。
 - 第 1 关可点，第 2–10 关显示 🔒 且按钮为禁用（灰）。
-- 控制台无报错。
-- 点第 1 关暂时无反应（`startLevel` 在 Task 5 实现）—— 这是预期的。
+- 页面加载完成后控制台无报错。
+- **先不要点第 1 关。** `startLevel` 要到 Task 5 才实现，此刻点击会在控制台抛 `ReferenceError: startLevel is not defined` —— 这是预期的，不是本任务的缺陷；Task 5 完成后该按钮才会工作。验收时只看渲染与控制台在**未点击**状态下是否干净。
 
 - [ ] **Step 4: 运行测试，确认没有被破坏**
 
@@ -1758,7 +1757,21 @@ git commit -m "feat: 页面骨架与关卡地图"
 
 - [ ] **Step 3: 接线事件与物理键盘**
 
-把 `initGame` 替换为下面内容。
+把 `initGame` 替换为下面内容，并给 `goToLevelMap` 的开头补一行 `clearFeedbackTimeout();`。
+
+**为什么补这一行：** 反馈回调必须随关卡一起取消。答对后 400 毫秒内点「返回」再开新关，陈旧回调会在新关卡第一题渲染之后才触发，白白吃掉一道题，计数器直接从「第 1 题」跳到「第 2 题」。`clearFeedbackTimeout` 与 `scheduleNextQuestion` 都在 Step 1 已定义。
+
+改完的 `goToLevelMap` 应为：
+
+```js
+    function goToLevelMap() {
+      clearFeedbackTimeout();
+      renderLevelMap();
+      showScreen(SCREEN_MAP);
+    }
+```
+
+`initGame` 的新内容：
 
 ```js
     const DIGIT_KEY_PATTERN = /^[0-9]$/;
