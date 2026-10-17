@@ -16,7 +16,8 @@
 - **游戏运行时零依赖、零构建、零网络请求。** `package.json` 只用于开发期跑测试，不得声明任何 `dependencies` / `devDependencies`。
 - **测试运行器**：Node.js 18 或以上。命令 `npm test`，其脚本为 `node --test "tests/*.test.js"`。
   **不要写成 `node --test tests/`** —— 在 Windows + Node 24 上目录参数会被当成模块入口，报 `Cannot find module ...\tests` 并以 exit 1 结束，一个测试都不会跑。
-- **本计划的代码已在 Windows 11 + Node v24.15.0 上实际组装并跑通（49/49 通过）**，演示输出与 spec §6 逐条核对一致。若你改了任何逻辑，改完必须重跑 `npm test`，不要靠推演。
+- **计划内嵌的代码已在本机实际组装并跑通，演示输出与 spec §6 逐条核对一致。** 若你改了任何逻辑，改完必须重跑 `npm test`，不要靠推演。
+- **测试数只增不减。** 每关任务里的 `Expected: PASS（55/55 …）` 是撰写时的数字；到 Task 10–12 时套房可能已被前面的评审修复轮加到更多。**数字对不上不是故障**——只要没有失败即可，不要为了凑数去改测试。若确实新增了测试，在报告里说明。
 - **标识符、代码注释、日志、异常消息一律英文**；**面向孩子的界面文案一律中文**。
 - **绝不写单行块语句**——`if` / `for` / `while` / `try` / `catch` 的循环体一律另起一行并带花括号。
 - **每个 `switch` 必须有 `default` 分支。**
@@ -1078,10 +1079,17 @@ Expected: FAIL —— `logic.computeStars is not a function`
     }
 
     function mergeAnswerIntoProgress(progress, question, isCorrect) {
+      const key = questionKey(question);
       if (isCorrect) {
+        // Spec §4.2: a question the child has since got right leaves the pool.
+        // Without this the pool saturates with mastered material and level
+        // 9/10 permanently spends 30% of every run on questions from week one,
+        // crowding out whatever is actually still hard.
+        progress.wrongAnswers = progress.wrongAnswers.filter(
+          (entry) => questionKey(entry) !== key,
+        );
         return progress;
       }
-      const key = questionKey(question);
       const existing = progress.wrongAnswers.find((entry) => questionKey(entry) === key);
       if (existing !== undefined) {
         existing.count += 1;
@@ -1341,7 +1349,7 @@ git commit -m "feat: 进度模型与输入规则"
 
     <div id="demo-overlay" class="demo-overlay" hidden>
       <div class="demo-card">
-        <p class="demo-title">这样算：</p>
+        <p id="demo-title" class="demo-title"></p>
         <ol id="demo-steps" class="demo-steps"></ol>
         <button id="demo-continue" type="button" class="primary-button">继续</button>
       </div>
@@ -1710,10 +1718,16 @@ git commit -m "feat: 页面骨架与关卡地图"
     }
 
     function handleCorrectAnswer() {
+      isFeedbackPending = true;
       gameState.combo += 1;
       if (!gameState.isRetrying) {
         gameState.correctCount += 1;
         gameState.answeredCount += 1;
+        // Spec §4.2: getting a question right removes it from the historical
+        // wrong-answer pool, so level 9/10 keeps surfacing what is still hard
+        // instead of spending a third of every run on mastered material.
+        mergeAnswerIntoProgress(gameState.progress, gameState.currentQuestion, true);
+        saveProgress(gameState.progress);
       }
       renderCombo();
       flashQuestion(FEEDBACK_CLASS_CORRECT);
@@ -1739,9 +1753,19 @@ git commit -m "feat: 页面骨架与关卡地图"
 `showDemo` 现在实现，`finishLevel` 在 Task 6 实现。把下面代码插在 `handleWrongAnswer` 之后。
 
 ```js
+    const DEMO_ANSWER_TEMPLATE = '正确答案是 {answer}';
+
     function showDemo(question) {
       const overlay = elementById('demo-overlay');
       const list = elementById('demo-steps');
+      // Spec §5.1 requires the correct answer to be shown, and §5.3 lets the
+      // child dismiss the overlay by tapping outside it. Putting the answer
+      // only in the last step means a child who swipes the overlay away never
+      // sees it, so it gets its own line at the top of the card.
+      elementById('demo-title').textContent = DEMO_ANSWER_TEMPLATE.replace(
+        '{answer}',
+        String(question.a - question.b),
+      );
       list.replaceChildren();
       for (const step of buildDemoSteps(question.a, question.b).steps) {
         const item = document.createElement('li');
@@ -1936,7 +1960,7 @@ Expected:
 - 全部答对 → 「过关啦！」+ ⭐⭐⭐ + 「答对 10 / 10 题」+「下一关」按钮。
 - 点「下一关」进入第 2 关。
 - 答对 8–9 题 → 一星或二星，同样显示「下一关」。
-- 答对 ≤ 7 题 → 「再试一次吧」+ ☆☆☆ + 按钮文案为「重新挑战」。
+- 答对 ≤ 7 题 → 「再试一次吧」+ ☆☆☆ + 按钮文案为「再来一次」。
 - 答错过的题在最后自动重练一轮，顶部显示「错题重练」。
 - 返回关卡地图，已过关的关卡显示对应星星，下一关解锁（锁图标消失、可点）。
 - 刷新页面后星星仍在（localStorage 生效）。
@@ -2560,13 +2584,15 @@ Expected: PASS
 6. `renderKeypad` 为限时关加「跳过」——把
 ```js
       keypad.appendChild(buildKeypadButton('⌫', 'keypad-backspace', handleBackspace));
-      keypad.appendChild(buildKeypadButton('确定', 'keypad-confirm', submitAnswer));
+      confirmButton = buildKeypadButton('确定', 'keypad-confirm', submitAnswer);
+      keypad.appendChild(confirmButton);
       renderAnswerDisplay();
 ```
 改成
 ```js
       keypad.appendChild(buildKeypadButton('⌫', 'keypad-backspace', handleBackspace));
-      keypad.appendChild(buildKeypadButton('确定', 'keypad-confirm', submitAnswer));
+      confirmButton = buildKeypadButton('确定', 'keypad-confirm', submitAnswer);
+      keypad.appendChild(confirmButton);
       if (isTimedChallenge()) {
         keypad.appendChild(buildKeypadButton(CHALLENGE_SKIP_LABEL, 'keypad-skip', skipQuestion));
       }
@@ -2630,7 +2656,7 @@ Expected:
 - 键盘区多出「跳过」按钮，点了立即换下一题。
 - 答错时题目变红、下方显示「正确答案是 X」，约 0.7 秒后自动下一题，**不弹演示**。
 - 答对连击照常。
-- 60 秒到 → 「挑战结束」+「60 秒答对 N 题 · 最高纪录 M 题」，按钮为「重新挑战」。
+- 60 秒到 → 「挑战结束」+「60 秒答对 N 题 · 最高纪录 M 题」，按钮为「再来一次」。
 - 再玩一次，最高纪录只增不减。
 - 关卡地图上第 10 关**没有星星**（限时挑战不计星级）。
 - 控制台无报错。
@@ -2699,13 +2725,26 @@ git commit -m "feat: 限时挑战关"
 
 ```js
     const PLANET_ICONS = ['🪐', '🌕', '⭐', '☄️', '🌠', '🔭', '🚀', '🛸', '🌌', '👽'];
+    const SHIP_ICON = '🚀';
     const STAR_MAP_STATE_CLEARED = 'is-cleared';
     const STAR_MAP_STATE_CURRENT = 'is-current';
     const STAR_MAP_STATE_LOCKED = 'is-locked';
+    const STAR_MAP_STATE_JUST_CLEARED = 'is-just-cleared';
     const LOCKED_ICON = '🔒';
+    const CHALLENGE_BEST_SCORE_TEMPLATE = '最高 {score} 题';
+
+    // The timed challenge never earns stars (spec §3.2), so its "played" state
+    // has to come from the best score instead — judged on stars alone its node
+    // would pulse as "current" forever, however many times the child ran it.
+    function isLevelCleared(levelId) {
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        return (gameState.progress.levelBestScore[String(levelId)] || 0) > 0;
+      }
+      return (gameState.progress.levelStars[String(levelId)] || 0) > 0;
+    }
 
     function levelState(levelId) {
-      if ((gameState.progress.levelStars[String(levelId)] || 0) > 0) {
+      if (isLevelCleared(levelId)) {
         return STAR_MAP_STATE_CLEARED;
       }
       if (isLevelUnlocked(gameState.progress, levelId)) {
@@ -2714,15 +2753,21 @@ git commit -m "feat: 限时挑战关"
       return STAR_MAP_STATE_LOCKED;
     }
 
-    function isLevelCleared(levelId) {
-      return levelState(levelId) === STAR_MAP_STATE_CLEARED;
-    }
-
     function buildStarMapNode(levelId) {
       const state = levelState(levelId);
       const isUnlocked = state !== STAR_MAP_STATE_LOCKED;
       const item = document.createElement('li');
       item.className = `star-node ${state}`;
+      if (levelId === gameState.justClearedLevelId) {
+        item.classList.add(STAR_MAP_STATE_JUST_CLEARED);
+      }
+
+      if (levelId === gameState.selectedLevelId) {
+        const ship = document.createElement('span');
+        ship.className = 'star-node-ship';
+        ship.textContent = SHIP_ICON;
+        item.appendChild(ship);
+      }
 
       const button = document.createElement('button');
       button.type = 'button';
@@ -2734,19 +2779,24 @@ git commit -m "feat: 限时挑战关"
       const icon = document.createElement('span');
       icon.className = 'star-node-icon';
       icon.textContent = isUnlocked ? PLANET_ICONS[levelId - 1] : LOCKED_ICON;
+      button.appendChild(icon);
+      item.appendChild(button);
 
       const number = document.createElement('span');
       number.className = 'star-node-number';
       number.textContent = String(levelId);
-
-      button.append(icon, number);
-      item.appendChild(button);
+      item.appendChild(number);
 
       if (isLevelCleared(levelId)) {
-        const stars = document.createElement('span');
-        stars.className = 'star-node-stars';
-        stars.textContent = formatStars(gameState.progress.levelStars[String(levelId)] || 0);
-        item.appendChild(stars);
+        const badge = document.createElement('span');
+        badge.className = 'star-node-stars';
+        badge.textContent = levelId === TIMED_CHALLENGE_LEVEL_ID
+          ? CHALLENGE_BEST_SCORE_TEMPLATE.replace(
+            '{score}',
+            String(gameState.progress.levelBestScore[String(levelId)] || 0),
+          )
+          : formatStars(gameState.progress.levelStars[String(levelId)] || 0);
+        item.appendChild(badge);
       }
       return item;
     }
@@ -2754,10 +2804,22 @@ git commit -m "feat: 限时挑战关"
     function renderLevelMap() {
       const list = elementById('star-map');
       list.replaceChildren();
+      let selectedNode = null;
       for (let levelId = FIRST_LEVEL_ID; levelId <= LEVEL_COUNT; levelId += 1) {
-        list.appendChild(buildStarMapNode(levelId));
+        const node = buildStarMapNode(levelId);
+        if (levelId === gameState.selectedLevelId) {
+          selectedNode = node;
+        }
+        list.appendChild(node);
       }
       renderLevelDetail();
+      // The map is wider than the screen, so the level the detail card is
+      // describing has to be brought into view or the child sees a card for a
+      // planet they cannot find.
+      if (selectedNode !== null) {
+        selectedNode.scrollIntoView({ block: 'nearest', inline: 'center' });
+      }
+      gameState.justClearedLevelId = null;
     }
 
     function firstPlayableLevelId() {
@@ -2830,6 +2892,8 @@ git commit -m "feat: 限时挑战关"
 ```js
     function goToLevelMap() {
       clearFeedbackTimeout();
+      clearChallengeClock();
+      isFeedbackPending = false;
       gameState.selectedLevelId = firstPlayableLevelId();
       renderLevelMap();
       showScreen(SCREEN_MAP);
@@ -2842,16 +2906,28 @@ git commit -m "feat: 限时挑战关"
 
 ```css
       :root {
+        /* Colour channels are declared as rgb triples so every translucent
+           glow derives from one source. Retuning a glow colour then moves all
+           of its shadows and text-glows with it, instead of leaving some
+           behind at the old hue. */
         --space-deep: #070b1c;
         --space-mid: #131a3d;
-        --space-panel: rgba(30, 39, 82, 0.92);
-        --space-line: rgba(120, 160, 255, 0.35);
-        --glow-cyan: #4fd1ff;
-        --glow-violet: #a678ff;
-        --glow-amber: #ffd166;
-        --glow-mint: #5eead4;
+        --space-panel-rgb: 30 39 82;
+        --space-line-rgb: 120 160 255;
+        --glow-cyan-rgb: 79 209 255;
+        --glow-violet-rgb: 166 120 255;
+        --glow-amber-rgb: 255 209 102;
+        --glow-mint-rgb: 94 234 212;
         --danger: #ff6b81;
-        --success: #5eead4;
+
+        --space-panel: rgb(var(--space-panel-rgb) / 0.92);
+        --space-line: rgb(var(--space-line-rgb) / 0.35);
+        --glow-cyan: rgb(var(--glow-cyan-rgb));
+        --glow-violet: rgb(var(--glow-violet-rgb));
+        --glow-amber: rgb(var(--glow-amber-rgb));
+        --glow-mint: rgb(var(--glow-mint-rgb));
+        --success: var(--glow-mint);
+
         --text-bright: #f2f5ff;
         --text-dim: #96a3d0;
         --node-locked: #2a3160;
@@ -2860,8 +2936,8 @@ git commit -m "feat: 限时挑战关"
         --touch-target: 64px;
         --question-font-size: 56px;
         --keypad-font-size: 32px;
-        --glow-soft: 0 0 18px rgba(79, 209, 255, 0.45);
-        --glow-strong: 0 0 28px rgba(166, 120, 255, 0.65);
+        --glow-soft: 0 0 18px rgb(var(--glow-cyan-rgb) / 0.45);
+        --glow-strong: 0 0 28px rgb(var(--glow-violet-rgb) / 0.65);
       }
 
       * {
@@ -2875,8 +2951,8 @@ git commit -m "feat: 限时挑战关"
         color: var(--text-bright);
         font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
         background:
-          radial-gradient(1100px 600px at 15% -10%, rgba(166, 120, 255, 0.28), transparent 60%),
-          radial-gradient(900px 500px at 90% 0%, rgba(79, 209, 255, 0.22), transparent 55%),
+          radial-gradient(1100px 600px at 15% -10%, rgb(var(--glow-violet-rgb) / 0.28), transparent 60%),
+          radial-gradient(900px 500px at 90% 0%, rgb(var(--glow-cyan-rgb) / 0.22), transparent 55%),
           var(--space-deep);
         display: flex;
         justify-content: center;
@@ -2915,15 +2991,17 @@ git commit -m "feat: 限时挑战关"
 
       .mute-toggle {
         position: fixed;
-        top: 12px;
-        right: 12px;
-        width: 56px;
-        height: 56px;
+        /* viewport-fit=cover opts the page into the unsafe area, so the
+           button has to clear the notch / rounded corner itself. */
+        top: calc(12px + env(safe-area-inset-top, 0px));
+        right: calc(12px + env(safe-area-inset-right, 0px));
+        width: var(--touch-target);
+        height: var(--touch-target);
         border: 2px solid var(--space-line);
         border-radius: 50%;
         background: var(--space-panel);
         color: var(--text-bright);
-        font-size: 24px;
+        font-size: 26px;
         cursor: pointer;
         z-index: 10;
       }
@@ -2931,36 +3009,44 @@ git commit -m "feat: 限时挑战关"
       .star-map-scroll {
         width: 100%;
         overflow-x: auto;
-        padding: 10px 4px 4px;
+        padding: 26px 4px 4px;
         scrollbar-width: thin;
+        scroll-behavior: smooth;
       }
 
+      /* 10 nodes x 64px + 9 gaps x 28px = 892px, wider than .screen's 760px,
+         so the star map scrolls horizontally on every viewport. That is
+         deliberate: the path is meant to be travelled along, not fitted.
+         The connector spans exactly the gap (left: -28px, width: 28px), so
+         it reads as a line between two planets rather than a dash painted
+         over one. */
       .star-map {
         list-style: none;
         margin: 0;
         padding: 0 8px;
         display: flex;
         align-items: flex-start;
-        gap: 4px;
+        gap: 28px;
         min-width: max-content;
       }
 
       .star-node {
+        width: 64px;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 6px;
+        gap: 3px;
         position: relative;
       }
 
       .star-node + .star-node::before {
         content: "";
         position: absolute;
-        top: 30px;
-        left: -18px;
-        width: 32px;
-        height: 3px;
-        border-radius: 2px;
+        top: 31px;
+        left: -28px;
+        width: 28px;
+        height: 2px;
+        border-radius: 1px;
         background: var(--space-line);
       }
 
@@ -2969,9 +3055,21 @@ git commit -m "feat: 限时挑战关"
         box-shadow: var(--glow-soft);
       }
 
+      .star-node-ship {
+        position: absolute;
+        top: -22px;
+        font-size: 20px;
+        animation: ship-bob 1.6s ease-in-out infinite;
+      }
+
+      @keyframes ship-bob {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-4px); }
+      }
+
       .star-node-button {
-        width: 60px;
-        height: 60px;
+        width: var(--touch-target);
+        height: var(--touch-target);
         border-radius: 50%;
         border: 3px solid var(--space-line);
         background: var(--space-panel);
@@ -2991,7 +3089,7 @@ git commit -m "feat: 限时挑战关"
 
       .star-node.is-current .star-node-button {
         border-color: var(--glow-amber);
-        box-shadow: 0 0 22px rgba(255, 209, 102, 0.7);
+        box-shadow: 0 0 22px rgb(var(--glow-amber-rgb) / 0.7);
         animation: node-pulse 1.8s ease-in-out infinite;
       }
 
@@ -3007,17 +3105,26 @@ git commit -m "feat: 限时挑战关"
       }
 
       .star-node-number {
-        position: absolute;
-        top: 62px;
         font-size: 13px;
         color: var(--text-dim);
       }
 
       .star-node-stars {
-        margin-top: 20px;
-        font-size: 13px;
+        font-size: 11px;
         line-height: 1;
         white-space: nowrap;
+      }
+
+      /* The "just cleared" pulse runs when the child returns to the map after
+         passing a level, so the planet they lit up is the one that moves. */
+      .star-node.is-just-cleared .star-node-button {
+        animation: planet-light-up 0.9s ease-out both;
+      }
+
+      @keyframes planet-light-up {
+        0% { box-shadow: 0 0 0 rgb(var(--glow-mint-rgb) / 0); }
+        40% { box-shadow: 0 0 42px rgb(var(--glow-mint-rgb) / 0.9); }
+        100% { box-shadow: 0 0 0 rgb(var(--glow-mint-rgb) / 0); }
       }
 
       @keyframes node-pulse {
@@ -3105,13 +3212,17 @@ git commit -m "feat: 限时挑战关"
 Run: 浏览器打开 `index.html`。
 Expected:
 - 深空蓝紫渐变背景，标题「🌌 减法星球」带发光。
-- 一行 10 个圆形星球节点，节点之间有线相连；第 1 关是琥珀色高亮并轻微脉动，第 2–10 关是暗色 🔒。
-- 节点下方显示关号；已通关的节点下方显示星星（此刻都还没有）。
+- 一行 10 个圆形星球节点，**每个可点面积 ≥ 64px**，节点之间有连线**横跨整个间距**（不是一截短横压在星球上）。
+- 第 1 关是琥珀色高亮并轻微脉动，第 2–10 关是暗色 🔒。
+- **选中的关卡上方浮着一枚 🚀 飞船标记**，并轻微上下浮动。
+- 节点下方显示关号；已通关的节点下方显示星星。
 - 下方详情卡显示「第 1 关 · 两位数减一位数」、☆☆☆、可点的「开始」。
-- 点第 5 关（锁着）无反应；点第 1 关节点，详情卡切到第 1 关。
+- **星图可以横向滑动**（10 个节点比屏幕宽是设计如此），且**页面加载时自动把选中的节点滚到视野中央**。
+- 点第 5 关（锁着）无反应；点第 1 关节点，详情卡切到第 1 关、飞船跟过去。
 - 页面加载后控制台无报错。
 - 点「开始」会跳进答题页（Task 5 已实现）。
-- 在系统设置里打开「减少动态效果」后刷新，节点不再脉动。
+- 在系统设置里打开「减少动态效果」后刷新，节点不再脉动、飞船不再浮动。
+- 右上角静音按钮 **≥ 64px**，且在带刘海的设备上不被遮挡。
 
 - [ ] **Step 6: 运行测试**
 
@@ -3174,13 +3285,16 @@ git commit -m "feat: 太空主题设计令牌与星图关卡地图"
         font-size: 20px;
         font-weight: 700;
         color: var(--glow-amber);
-        text-shadow: 0 0 14px rgba(255, 209, 102, 0.8);
         opacity: 0;
-        transition: opacity 0.2s ease;
+        transition: opacity 0.2s ease, transform 0.2s ease;
       }
 
+      /* Spec §7 requires the feedback to ramp with the streak, so ×3 and ×8
+         must not look identical. renderCombo sets --combo-step. */
       .combo-indicator.is-visible {
         opacity: 1;
+        transform: scale(calc(1 + var(--combo-step, 0) * 0.07));
+        text-shadow: 0 0 calc(14px + var(--combo-step, 0) * 4px) rgb(var(--glow-amber-rgb) / 0.85);
       }
 
       .question-area {
@@ -3200,7 +3314,7 @@ git commit -m "feat: 太空主题设计令牌与星图关卡地图"
 
       .question-area.is-strong-hint {
         border-color: var(--glow-amber);
-        box-shadow: 0 0 24px rgba(255, 209, 102, 0.5);
+        box-shadow: 0 0 24px rgb(var(--glow-amber-rgb) / 0.5);
       }
 
       .question-text {
@@ -3228,7 +3342,7 @@ git commit -m "feat: 太空主题设计令牌与星图关卡地图"
 
       .question-text.is-correct {
         color: var(--success);
-        text-shadow: 0 0 20px rgba(94, 234, 212, 0.8);
+        text-shadow: 0 0 20px rgb(var(--glow-mint-rgb) / 0.8);
       }
 
       .question-text.is-wrong {
@@ -3363,6 +3477,18 @@ git commit -m "feat: 太空主题设计令牌与星图关卡地图"
         line-height: 1.1;
       }
 
+      /* Task 4 put class="screen-title" on the map <h1> and the result <h2>.
+         Task 10 replaced the map markup, so this class now survives only on
+         the result heading — which is the screen meant to reward the child
+         and must not render as a browser-default h2. */
+      .screen-title {
+        margin: 8px 0 0;
+        font-size: 34px;
+        text-align: center;
+        letter-spacing: 2px;
+        text-shadow: var(--glow-soft);
+      }
+
       .result-summary {
         margin: 0;
         font-size: 20px;
@@ -3410,15 +3536,12 @@ git commit -m "feat: 太空主题设计令牌与星图关卡地图"
         }
       }
 
-      .level-complete-glow {
-        animation: level-glow 0.9s ease-out both;
-      }
-
-      @keyframes level-glow {
-        0% { box-shadow: 0 0 0 rgba(94, 234, 212, 0); }
-        40% { box-shadow: 0 0 42px rgba(94, 234, 212, 0.9); }
-        100% { box-shadow: 0 0 0 rgba(94, 234, 212, 0); }
-      }
+      /* There is deliberately no .level-complete-glow rule here. Spec §7 asks
+         for 该星球点亮 — the planet node on the star map — not the question
+         card, and #question-area lives inside #screen-play, which is hidden
+         by the time the result screen appears, so an animation on it would
+         never render. Task 10 owns that effect as .star-node.is-just-cleared
+         / @keyframes planet-light-up. */
 ```
 
 - [ ] **Step 2: 追加特效钩子**
@@ -3432,8 +3555,7 @@ git commit -m "feat: 太空主题设计令牌与星图关卡地图"
     const SPARK_ICONS = ['✨', '⭐', '🌟', '💫'];
     const SPARK_LIFETIME_MS = 750;
     const SPARK_RADIUS_PX = 110;
-    const LEVEL_COMPLETE_GLOW_CLASS = 'level-complete-glow';
-    const LEVEL_COMPLETE_GLOW_MS = 900;
+    const COMBO_INTENSITY_PROPERTY = '--combo-step';
 
     function spawnSparkBurst() {
       const area = elementById('question-area');
@@ -3452,10 +3574,11 @@ git commit -m "feat: 太空主题设计令牌与星图关卡地图"
       window.setTimeout(() => burst.remove(), SPARK_LIFETIME_MS);
     }
 
-    function renderLevelCompleteGlow() {
-      const area = elementById('question-area');
-      area.classList.add(LEVEL_COMPLETE_GLOW_CLASS);
-      window.setTimeout(() => area.classList.remove(LEVEL_COMPLETE_GLOW_CLASS), LEVEL_COMPLETE_GLOW_MS);
+    // Spec §7 requires the feedback to ramp with the streak. The CSS scales
+    // and brightens off this one property.
+    function renderComboIntensity() {
+      const steps = Math.max(gameState.combo - COMBO_VISIBLE_FROM, 0);
+      elementById('combo-indicator').style.setProperty(COMBO_INTENSITY_PROPERTY, String(steps));
     }
 ```
 
@@ -3482,9 +3605,23 @@ git commit -m "feat: 太空主题设计令牌与星图关卡地图"
 ```js
       renderResult(levelId, stars, isPassed, total);
       if (isPassed) {
-        renderLevelCompleteGlow();
+        // Consumed and cleared by renderLevelMap on the way back to the map,
+        // so the planet the child just lit up is the one that animates.
+        gameState.justClearedLevelId = levelId;
       }
       showScreen(SCREEN_RESULT);
+```
+
+3. 让连击反馈随连击数增强——在 `renderCombo` 末尾追加一行，把
+```js
+      indicator.classList.toggle('is-visible', isVisible);
+    }
+```
+改成
+```js
+      indicator.classList.toggle('is-visible', isVisible);
+      renderComboIntensity();
+    }
 ```
 
 - [ ] **Step 4: 在 `prefers-reduced-motion` 块里关闭位移与缩放动画**
@@ -3494,9 +3631,10 @@ git commit -m "feat: 太空主题设计令牌与星图关卡地图"
 ```css
       @media (prefers-reduced-motion: reduce) {
         .star-node.is-current .star-node-button,
+        .star-node.is-just-cleared .star-node-button,
+        .star-node-ship,
         .question-text.is-wrong,
-        .demo-steps li,
-        .level-complete-glow {
+        .demo-steps li {
           animation: none;
         }
 
@@ -3505,6 +3643,10 @@ git commit -m "feat: 太空主题设计令牌与星图关卡地图"
         }
 
         .question-area.is-weak-hint {
+          transform: none;
+        }
+
+        .combo-indicator.is-visible {
           transform: none;
         }
 
@@ -3524,14 +3666,15 @@ Expected:
 - 答错：题目红色抖动，弹出演示卡（青色发光描边），点「继续」进下一题。
 - 连击 ≥ 3：右上角琥珀色「连击 ×N」。
 - 卡住 15 秒题目轻微放大、个位数字变琥珀色；30 秒个位被琥珀色圆圈圈住并出现提示文案。
-- 过关：题目区闪一下薄荷色光，结算页显示星星。
+- 过关：结算页显示星星，标题带发光（不是浏览器默认 h2）；**返回星图时，刚通关的那颗星球闪一下薄荷色光**——注意发光的是星图上的星球，不是答题区（答题区此时已经隐藏，动画打在上面根本不会渲染）。
+- 连击：连到 ×3 与连到 ×8 时，右上角指示器的大小与光晕**明显不同**，不是一个样子。
 - 打开系统「减少动态效果」后刷新：不再有星光炸开、不再抖动、节点不脉动。
 - 控制台无报错。
 
 - [ ] **Step 6: 运行测试**
 
 Run: `npm test`
-Expected: PASS（51/51）
+Expected: PASS（55/55，本任务不碰 game-logic）
 
 - [ ] **Step 7: 提交**
 
@@ -3558,9 +3701,12 @@ git commit -m "feat: 答题与结算界面视觉及动效"
 ```css
       @media (max-width: 520px) {
         :root {
+          /* --touch-target is deliberately NOT lowered here. Spec §7 sets a
+             hard ≥64px floor for a finger on a tablet, and shrinking it on
+             the narrowest viewports would break the requirement exactly
+             where the child is most likely to mis-tap. */
           --question-font-size: 48px;
           --keypad-font-size: 26px;
-          --touch-target: 56px;
         }
 
         body {
@@ -3629,7 +3775,11 @@ Run: 双击 `index.html`（Chrome 或 Edge）。
 - [ ] 首次答对**能听到声音**。
 - [ ] 弱提示 15 秒、强提示 30 秒按 spec §5.2 触发；提示不含答案。
 - [ ] 第 10 关：60 秒倒计时、跳过按钮、答错不弹演示、结束显示最高纪录。
-- [ ] 把窗口拉窄到手机宽度，布局不溢出、按钮仍可点。
+- [ ] 第 10 关跑过一次后回到星图，它的节点**不再显示成琥珀色脉动的「当前关」**——限时关的「已玩过」由最高分判定，与星级无关（spec §3.2）。
+- [ ] 答错后**不点「继续」，直接点弹层外的空白处关掉它**，题目下方仍能看到「正确答案是 X」（spec §5.1：答案不能只藏在演示的最后一步里）。
+- [ ] 用 DevTools 量一下可点区域：静音按钮与星图节点**都 ≥ 64px**（spec §7 的硬性要求，不能只在桌面宽度上满足）。
+- [ ] 把窗口拉窄到手机宽度，布局不溢出、按钮仍可点，且**尺寸没有缩到 64px 以下**。
+- [ ] 连击指示器在 ×3 与 ×8 时大小/光晕明显不同。
 
 - [ ] **Step 3: 在安卓平板上跑一遍分发验收（spec §9.2）**
 
@@ -3643,21 +3793,28 @@ Run: 双击 `index.html`（Chrome 或 Edge）。
 
 **若任一项失败**，在 `index.html` 顶部加一行注释记录现象，并回到本计划的 Triage 讨论，不要静默绕过。
 
+**其中「通关后刷新页面，星星还在」这一项是有预案的，不是死路：** 若安卓 Chrome 在 `file://` 下拒绝写入 `localStorage`（`loadProgress` 的 `catch` 会静默降级成全新存档），就把同一份文件托管到 `wayneoffice.cn` 的某个 URL 再测一遍——spec §2.1 已把这条路写成兜底方案，届时托管从「可选便利」升级为必需项。**先按单文件测；测不过再托管，不要提前托管。** 结论写进报告。
+
 - [ ] **Step 4: 运行全部测试**
 
 Run: `npm test`
-Expected: PASS（51/51）
+Expected: PASS（55/55，本任务不碰 game-logic）
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 5: 收尾（在提交之前）**
+
+按 `~/.claude/CLAUDE.md` 的「代码修改收尾」一节，顺序是**实现完成 → 收尾 → 跑测试 → 提交**。所以在提交之前跑一次 `/simplify`（本次 diff 含 `.cs` 之外的源代码改动，`reviewing-dotnet-idioms` 不适用 —— 这不是 .NET 项目）。
+
+CSS 密集的 Task 10–12 正是重复容易堆积的地方，这一步不能跳。
+
+- [ ] **Step 6: 跑测试并提交**
+
+Run: `npm test`
+Expected: PASS（无失败即可；数字以实际为准）
 
 ```bash
 git add index.html
 git commit -m "feat: 响应式布局"
 ```
-
-- [ ] **Step 6: 收尾**
-
-实现与测试都完成后，按 `~/.claude/CLAUDE.md` 的「代码修改收尾」一节，在**提交前**跑一次 `/simplify`（本次 diff 含 `.cs` 之外的源代码改动，`reviewing-dotnet-idioms` 不适用 —— 这不是 .NET 项目）。修完再跑一次 `npm test`，然后提交。
 
 ---
 
