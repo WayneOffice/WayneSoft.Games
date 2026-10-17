@@ -3742,21 +3742,17 @@ git commit -m "feat: 答题与结算界面视觉及动效"
           font-size: 15px;
         }
 
-        .star-node-button {
-          width: 52px;
-          height: 52px;
-          font-size: 22px;
-        }
+        /* .star-node-button is deliberately NOT shrunk here. It is sized by
+           var(--touch-target), and spec §7 sets a hard ≥64px floor for a
+           finger on a tablet — the narrowest viewport is exactly where a
+           child is most likely to mis-tap, so shrinking there is backwards.
+           The map scrolls horizontally instead. */
 
-        .star-node + .star-node::before {
-          top: 26px;
-          left: -16px;
-          width: 28px;
-        }
-
-        .star-node-number {
-          top: 54px;
-        }
+        /* For the same reason the connector geometry and the node number are
+           NOT overridden either: Task 10 tuned them to a 64px node
+           (`top: 31px; left: -28px`), and the number is a normal flow child,
+           not an absolutely positioned one. Narrowing anything here would put
+           the connector back to overlapping the planet. */
 
         .level-detail-heading {
           font-size: 19px;
@@ -3797,7 +3793,7 @@ Run: 双击 `index.html`（Chrome 或 Edge）。
 - [ ] 弱提示 15 秒、强提示 30 秒按 spec §5.2 触发；提示不含答案。
 - [ ] 第 10 关：60 秒倒计时、跳过按钮、答错不弹演示、结束显示最高纪录。
 - [ ] 第 10 关跑过一次后回到星图，它的节点**不再显示成琥珀色脉动的「当前关」**——限时关的「已玩过」由最高分判定，与星级无关（spec §3.2）。
-- [ ] 答错后**不点「继续」，直接点弹层外的空白处关掉它**，题目下方仍能看到「正确答案是 X」（spec §5.1：答案不能只藏在演示的最后一步里）。
+- [ ] 答错后弹层顶部**独立显示「正确答案是 X」**（不是只藏在步骤列表的最后一步里）。注意关闭弹层必然换题，所以答案的可视位就在弹层内——检查的是它出现在卡片顶部而不是末尾。
 - [ ] 用 DevTools 量一下可点区域：静音按钮与星图节点**都 ≥ 64px**（spec §7 的硬性要求，不能只在桌面宽度上满足）。
 - [ ] 把窗口拉窄到手机宽度，布局不溢出、按钮仍可点，且**尺寸没有缩到 64px 以下**。
 - [ ] 连击指示器在 ×3 与 ×8 时大小/光晕明显不同。
