@@ -70,6 +70,28 @@ test('a correct answer is not tracked', () => {
   assert.deepEqual(hostRealm(progress.wrongAnswers), []);
 });
 
+test('answering a tracked question correctly removes it from the pool', () => {
+  const progress = logic.createInitialProgress();
+  logic.mergeAnswerIntoProgress(progress, { a: 42, b: 7 }, false);
+  logic.mergeAnswerIntoProgress(progress, { a: 42, b: 7 }, true);
+  assert.deepEqual(hostRealm(progress.wrongAnswers), []);
+});
+
+test('mastering one question leaves the other tracked questions alone', () => {
+  const progress = logic.createInitialProgress();
+  logic.mergeAnswerIntoProgress(progress, { a: 42, b: 7 }, false);
+  logic.mergeAnswerIntoProgress(progress, { a: 53, b: 8 }, false);
+  logic.mergeAnswerIntoProgress(progress, { a: 42, b: 7 }, true);
+  assert.deepEqual(hostRealm(progress.wrongAnswers), [{ a: 53, b: 8, count: 1 }]);
+});
+
+test('a correct answer on a question that was never wrong is a no-op', () => {
+  const progress = logic.createInitialProgress();
+  logic.mergeAnswerIntoProgress(progress, { a: 42, b: 7 }, false);
+  logic.mergeAnswerIntoProgress(progress, { a: 61, b: 5 }, true);
+  assert.deepEqual(hostRealm(progress.wrongAnswers), [{ a: 42, b: 7, count: 1 }]);
+});
+
 test('the tracked wrong answers list is capped', () => {
   const progress = logic.createInitialProgress();
   for (let i = 0; i < logic.MAX_TRACKED_WRONG_ANSWERS + 10; i += 1) {

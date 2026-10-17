@@ -538,10 +538,13 @@
     }
 
     function mergeAnswerIntoProgress(progress, question, isCorrect) {
+      const key = questionKey(question);
       if (isCorrect) {
+        progress.wrongAnswers = progress.wrongAnswers.filter(
+          (entry) => questionKey(entry) !== key,
+        );
         return progress;
       }
-      const key = questionKey(question);
       const existing = progress.wrongAnswers.find((entry) => questionKey(entry) === key);
       if (existing !== undefined) {
         existing.count += 1;
@@ -903,6 +906,8 @@
       if (!gameState.isRetrying) {
         gameState.correctCount += 1;
         gameState.answeredCount += 1;
+        mergeAnswerIntoProgress(gameState.progress, gameState.currentQuestion, true);
+        saveProgress(gameState.progress);
       }
       renderCombo();
       flashQuestion(FEEDBACK_CLASS_CORRECT);
