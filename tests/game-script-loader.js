@@ -28,6 +28,7 @@ const EXPORTED_NAMES = [
   'createQuestionStream',
   'formatQuestion',
   'buildDemoSteps',
+  'needsBorrowing',
   'computeStars',
   'isLevelPassed',
   'isLevelUnlocked',

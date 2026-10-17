@@ -117,3 +117,24 @@ test('every level 4 to 8 demo mentions a ten being broken, so the promise holds'
     }
   }
 });
+
+test('a problem that needs no borrowing is always explained by place value', () => {
+  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
+      if (logic.needsBorrowing(a, b)) {
+        continue;
+      }
+      const firstStep = logic.buildDemoSteps(a, b).steps[0];
+      assert.ok(
+        firstStep.startsWith('个位：'),
+        `the ${a} - ${b} demo borrows a ten it does not need: ${firstStep}`,
+      );
+    }
+  }
+});
+
+test('the demo for 45 - 10 subtracts a whole ten, not a borrowed one', () => {
+  const demo = logic.buildDemoSteps(45, 10);
+  assert.deepEqual(hostRealm(demo.steps), ['个位：5 − 0 = 5', '十位：4 − 1 = 3', '合起来：30 + 5 = 35']);
+  assert.equal(demo.result, 35);
+});

@@ -259,7 +259,7 @@
     const PLACE_LABEL_COMBINE = '合起来';
 
     function subtrahendOnesDigit(b) {
-      return b >= MIN_TWO_DIGIT_NUMBER ? onesDigit(b) : b;
+      return b >= ONES_PER_TEN ? onesDigit(b) : b;
     }
 
     function needsBorrowing(a, b) {
