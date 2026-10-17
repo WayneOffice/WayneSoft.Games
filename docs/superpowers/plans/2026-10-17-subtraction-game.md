@@ -1551,6 +1551,7 @@ git commit -m "feat: 页面骨架与关卡地图"
       gameState.isRetrying = false;
       gameState.currentQuestion = null;
       gameState.currentInput = '';
+      renderCombo();
       elementById('level-title').textContent = LEVEL_TITLES[levelId];
       elementById('challenge-clock').hidden = true;
       showScreen(SCREEN_PLAY);
