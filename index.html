@@ -306,6 +306,11 @@
         align-items: center;
         gap: 12px;
         flex-wrap: wrap;
+        /* #mute-toggle is position: fixed at the viewport's top-right. On any
+           viewport narrower than .screen's max-width the two overlap, and the
+           opaque button covers the combo readout — including the ×N number.
+           Reserve the button's width plus its inset so they cannot collide. */
+        padding-right: calc(var(--touch-target) + 20px);
       }
 
       .play-title {
@@ -594,6 +599,10 @@
         .question-text.is-wrong,
         .demo-steps li {
           animation: none;
+        }
+
+        .star-map-scroll {
+          scroll-behavior: auto;
         }
 
         .spark-burst {
