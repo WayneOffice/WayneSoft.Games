@@ -5,16 +5,321 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>100 以内减法闯关</title>
   <style>
-    /* Filled in by Task 10. */
+      :root {
+        /* Colour channels are declared as rgb triples so every translucent
+           glow derives from one source. Retuning a glow colour then moves all
+           of its shadows and text-glows with it, instead of leaving some
+           behind at the old hue. */
+        --space-deep: #070b1c;
+        --space-mid: #131a3d;
+        --space-panel-rgb: 30 39 82;
+        --space-line-rgb: 120 160 255;
+        --glow-cyan-rgb: 79 209 255;
+        --glow-violet-rgb: 166 120 255;
+        --glow-amber-rgb: 255 209 102;
+        --glow-mint-rgb: 94 234 212;
+        --danger: #ff6b81;
+
+        --space-panel: rgb(var(--space-panel-rgb) / 0.92);
+        --space-line: rgb(var(--space-line-rgb) / 0.35);
+        --glow-cyan: rgb(var(--glow-cyan-rgb));
+        --glow-violet: rgb(var(--glow-violet-rgb));
+        --glow-amber: rgb(var(--glow-amber-rgb));
+        --glow-mint: rgb(var(--glow-mint-rgb));
+        --success: var(--glow-mint);
+
+        --text-bright: #f2f5ff;
+        --text-dim: #96a3d0;
+        --node-locked: #2a3160;
+        --radius-panel: 24px;
+        --radius-button: 18px;
+        --touch-target: 64px;
+        --question-font-size: 56px;
+        --keypad-font-size: 32px;
+        --glow-soft: 0 0 18px rgb(var(--glow-cyan-rgb) / 0.45);
+        --glow-strong: 0 0 28px rgb(var(--glow-violet-rgb) / 0.65);
+      }
+
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text-bright);
+        font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        background:
+          radial-gradient(1100px 600px at 15% -10%, rgb(var(--glow-violet-rgb) / 0.28), transparent 60%),
+          radial-gradient(900px 500px at 90% 0%, rgb(var(--glow-cyan-rgb) / 0.22), transparent 55%),
+          var(--space-deep);
+        display: flex;
+        justify-content: center;
+        padding: 16px;
+      }
+
+      .screen {
+        width: 100%;
+        max-width: 760px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+      }
+
+      .screen[hidden] {
+        display: none;
+      }
+
+      .app-header {
+        text-align: center;
+      }
+
+      .app-title {
+        margin: 8px 0 4px;
+        font-size: 34px;
+        letter-spacing: 2px;
+        text-shadow: var(--glow-soft);
+      }
+
+      .app-subtitle {
+        margin: 0;
+        color: var(--text-dim);
+        font-size: 17px;
+      }
+
+      .mute-toggle {
+        position: fixed;
+        /* viewport-fit=cover opts the page into the unsafe area, so the
+           button has to clear the notch / rounded corner itself. */
+        top: calc(12px + env(safe-area-inset-top, 0px));
+        right: calc(12px + env(safe-area-inset-right, 0px));
+        width: var(--touch-target);
+        height: var(--touch-target);
+        border: 2px solid var(--space-line);
+        border-radius: 50%;
+        background: var(--space-panel);
+        color: var(--text-bright);
+        font-size: 26px;
+        cursor: pointer;
+        z-index: 10;
+      }
+
+      .star-map-scroll {
+        width: 100%;
+        overflow-x: auto;
+        padding: 26px 4px 4px;
+        scrollbar-width: thin;
+        scroll-behavior: smooth;
+      }
+
+      /* 10 nodes x 64px + 9 gaps x 28px = 892px, wider than .screen's 760px,
+         so the star map scrolls horizontally on every viewport. That is
+         deliberate: the path is meant to be travelled along, not fitted.
+         The connector spans exactly the gap (left: -28px, width: 28px), so
+         it reads as a line between two planets rather than a dash painted
+         over one. */
+      .star-map {
+        list-style: none;
+        margin: 0;
+        padding: 0 8px;
+        display: flex;
+        align-items: flex-start;
+        gap: 28px;
+        min-width: max-content;
+      }
+
+      .star-node {
+        width: 64px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        position: relative;
+      }
+
+      .star-node + .star-node::before {
+        content: "";
+        position: absolute;
+        top: 31px;
+        left: -28px;
+        width: 28px;
+        height: 2px;
+        border-radius: 1px;
+        background: var(--space-line);
+      }
+
+      .star-node.is-cleared + .star-node::before {
+        background: var(--glow-cyan);
+        box-shadow: var(--glow-soft);
+      }
+
+      .star-node-ship {
+        position: absolute;
+        top: -22px;
+        font-size: 20px;
+        animation: ship-bob 1.6s ease-in-out infinite;
+      }
+
+      @keyframes ship-bob {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-4px); }
+      }
+
+      .star-node-button {
+        width: var(--touch-target);
+        height: var(--touch-target);
+        border-radius: 50%;
+        border: 3px solid var(--space-line);
+        background: var(--space-panel);
+        color: var(--text-bright);
+        font-size: 26px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
+      }
+
+      .star-node.is-cleared .star-node-button {
+        border-color: var(--glow-cyan);
+        box-shadow: var(--glow-soft);
+      }
+
+      .star-node.is-current .star-node-button {
+        border-color: var(--glow-amber);
+        box-shadow: 0 0 22px rgb(var(--glow-amber-rgb) / 0.7);
+        animation: node-pulse 1.8s ease-in-out infinite;
+      }
+
+      .star-node.is-locked .star-node-button {
+        background: var(--node-locked);
+        border-color: transparent;
+        color: var(--text-dim);
+        cursor: not-allowed;
+      }
+
+      .star-node-button:active:not(:disabled) {
+        transform: scale(0.92);
+      }
+
+      .star-node-number {
+        font-size: 13px;
+        color: var(--text-dim);
+      }
+
+      .star-node-stars {
+        font-size: 11px;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
+      /* The "just cleared" pulse runs when the child returns to the map after
+         passing a level, so the planet they lit up is the one that moves. */
+      .star-node.is-just-cleared .star-node-button {
+        animation: planet-light-up 0.9s ease-out both;
+      }
+
+      @keyframes planet-light-up {
+        0% { box-shadow: 0 0 0 rgb(var(--glow-mint-rgb) / 0); }
+        40% { box-shadow: 0 0 42px rgb(var(--glow-mint-rgb) / 0.9); }
+        100% { box-shadow: 0 0 0 rgb(var(--glow-mint-rgb) / 0); }
+      }
+
+      @keyframes node-pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.08); }
+      }
+
+      .level-detail {
+        width: 100%;
+        max-width: 460px;
+        padding: 22px 20px;
+        border-radius: var(--radius-panel);
+        border: 2px solid var(--space-line);
+        background: var(--space-panel);
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .level-detail-heading {
+        margin: 0;
+        font-size: 22px;
+      }
+
+      .level-detail-stars {
+        margin: 0;
+        font-size: 30px;
+        line-height: 1;
+        color: var(--text-dim);
+      }
+
+      .level-detail-action {
+        width: 100%;
+        max-width: 260px;
+      }
+
+      .primary-button,
+      .secondary-button,
+      .ghost-button {
+        min-height: var(--touch-target);
+        padding: 0 26px;
+        border: none;
+        border-radius: var(--radius-button);
+        font-family: inherit;
+        font-size: 22px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .primary-button {
+        background: linear-gradient(160deg, var(--glow-violet), var(--glow-cyan));
+        color: #0a0f26;
+        box-shadow: var(--glow-soft);
+      }
+
+      .primary-button:disabled {
+        background: var(--node-locked);
+        color: var(--text-dim);
+        box-shadow: none;
+        cursor: not-allowed;
+      }
+
+      .secondary-button {
+        background: var(--space-panel);
+        border: 2px solid var(--glow-cyan);
+        color: var(--glow-cyan);
+      }
+
+      .ghost-button {
+        background: transparent;
+        color: var(--text-dim);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .star-node.is-current .star-node-button,
+        .star-node-ship {
+          animation: none;
+        }
+      }
   </style>
 </head>
 <body>
   <button id="mute-toggle" type="button" class="mute-toggle" aria-label="音效开关">🔊</button>
 
   <main id="screen-map" class="screen">
-    <h1 class="screen-title">100 以内减法闯关</h1>
-    <p class="screen-subtitle">点一关开始练习</p>
-    <ul id="level-map" class="level-map"></ul>
+    <header class="app-header">
+      <h1 class="app-title">🌌 减法星球</h1>
+      <p class="app-subtitle">沿着星图，一关一关往前闯</p>
+    </header>
+    <div class="star-map-scroll">
+      <ol id="star-map" class="star-map"></ol>
+    </div>
+    <section id="level-detail" class="level-detail"></section>
   </main>
 
   <main id="screen-play" class="screen" hidden>
@@ -619,13 +924,14 @@
 
     const STAR_FILLED = '⭐';
     const STAR_EMPTY = '☆';
-    const LEVEL_LOCK_ICON = '🔒';
     const MUTE_ICON_ON = '🔊';
     const MUTE_ICON_OFF = '🔇';
 
     const gameState = {
       progress: createInitialProgress(),
       currentLevelId: null,
+      selectedLevelId: null,
+      justClearedLevelId: null,
       currentQuestion: null,
       currentInput: '',
       questionStream: null,
@@ -676,53 +982,161 @@
       return STAR_FILLED.repeat(starCount) + STAR_EMPTY.repeat(MAX_STARS - starCount);
     }
 
-    function buildLevelCard(levelId) {
-      const isUnlocked = isLevelUnlocked(gameState.progress, levelId);
+    const PLANET_ICONS = ['🪐', '🌕', '⭐', '☄️', '🌠', '🔭', '🚀', '🛸', '🌌', '👽'];
+    const SHIP_ICON = '🚀';
+    const STAR_MAP_STATE_CLEARED = 'is-cleared';
+    const STAR_MAP_STATE_CURRENT = 'is-current';
+    const STAR_MAP_STATE_LOCKED = 'is-locked';
+    const STAR_MAP_STATE_JUST_CLEARED = 'is-just-cleared';
+    const LOCKED_ICON = '🔒';
+    const CHALLENGE_BEST_SCORE_TEMPLATE = '最高 {score} 题';
+
+    // The timed challenge never earns stars (spec §3.2), so its "played" state
+    // has to come from the best score instead — judged on stars alone its node
+    // would pulse as "current" forever, however many times the child ran it.
+    function isLevelCleared(levelId) {
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        return (gameState.progress.levelBestScore[String(levelId)] || 0) > 0;
+      }
+      return (gameState.progress.levelStars[String(levelId)] || 0) > 0;
+    }
+
+    function levelState(levelId) {
+      if (isLevelCleared(levelId)) {
+        return STAR_MAP_STATE_CLEARED;
+      }
+      if (isLevelUnlocked(gameState.progress, levelId)) {
+        return STAR_MAP_STATE_CURRENT;
+      }
+      return STAR_MAP_STATE_LOCKED;
+    }
+
+    function buildStarMapNode(levelId) {
+      const state = levelState(levelId);
+      const isUnlocked = state !== STAR_MAP_STATE_LOCKED;
       const item = document.createElement('li');
-      item.className = isUnlocked ? 'level-card' : 'level-card is-locked';
+      item.className = `star-node ${state}`;
+      if (levelId === gameState.justClearedLevelId) {
+        item.classList.add(STAR_MAP_STATE_JUST_CLEARED);
+      }
+
+      if (levelId === gameState.selectedLevelId) {
+        const ship = document.createElement('span');
+        ship.className = 'star-node-ship';
+        ship.textContent = SHIP_ICON;
+        item.appendChild(ship);
+      }
 
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'level-button';
+      button.className = 'star-node-button';
       button.disabled = !isUnlocked;
-      button.addEventListener('click', () => startLevel(levelId));
+      button.setAttribute('aria-label', `第 ${levelId} 关 ${LEVEL_TITLES[levelId]}`);
+      button.addEventListener('click', () => selectLevel(levelId));
+
+      const icon = document.createElement('span');
+      icon.className = 'star-node-icon';
+      icon.textContent = isUnlocked ? PLANET_ICONS[levelId - 1] : LOCKED_ICON;
+      button.appendChild(icon);
+      item.appendChild(button);
 
       const number = document.createElement('span');
-      number.className = 'level-number';
-      number.textContent = isUnlocked ? `第 ${levelId} 关` : LEVEL_LOCK_ICON;
+      number.className = 'star-node-number';
+      number.textContent = String(levelId);
+      item.appendChild(number);
 
-      const title = document.createElement('span');
-      title.className = 'level-name';
-      title.textContent = LEVEL_TITLES[levelId];
-
-      const stars = document.createElement('span');
-      stars.className = 'level-stars';
-      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
-        // The timed challenge is never awarded stars, so showing three empty
-        // ones would be a lie. Show its best score instead.
-        const bestScore = gameState.progress.levelBestScore[String(levelId)] || 0;
-        stars.textContent = bestScore > 0 ? `最高 ${bestScore} 题` : '';
-      } else {
-        stars.textContent = formatStars(gameState.progress.levelStars[String(levelId)] || 0);
+      if (isLevelCleared(levelId)) {
+        const badge = document.createElement('span');
+        badge.className = 'star-node-stars';
+        badge.textContent = levelId === TIMED_CHALLENGE_LEVEL_ID
+          ? CHALLENGE_BEST_SCORE_TEMPLATE.replace(
+            '{score}',
+            String(gameState.progress.levelBestScore[String(levelId)] || 0),
+          )
+          : formatStars(gameState.progress.levelStars[String(levelId)] || 0);
+        item.appendChild(badge);
       }
-
-      button.append(number, title, stars);
-      item.appendChild(button);
       return item;
     }
 
     function renderLevelMap() {
-      const list = elementById('level-map');
+      const list = elementById('star-map');
       list.replaceChildren();
+      let selectedNode = null;
       for (let levelId = FIRST_LEVEL_ID; levelId <= LEVEL_COUNT; levelId += 1) {
-        list.appendChild(buildLevelCard(levelId));
+        const node = buildStarMapNode(levelId);
+        if (levelId === gameState.selectedLevelId) {
+          selectedNode = node;
+        }
+        list.appendChild(node);
       }
+      renderLevelDetail();
+      // The map is wider than the screen, so the level the detail card is
+      // describing has to be brought into view or the child sees a card for a
+      // planet they cannot find.
+      if (selectedNode !== null) {
+        selectedNode.scrollIntoView({ block: 'nearest', inline: 'center' });
+      }
+      gameState.justClearedLevelId = null;
+    }
+
+    function firstPlayableLevelId() {
+      for (let levelId = FIRST_LEVEL_ID; levelId <= LEVEL_COUNT; levelId += 1) {
+        if (!isLevelCleared(levelId)) {
+          return levelId;
+        }
+      }
+      return LEVEL_COUNT;
+    }
+
+    function buildLevelDetail(levelId) {
+      const state = levelState(levelId);
+      const isUnlocked = state !== STAR_MAP_STATE_LOCKED;
+      const fragment = document.createDocumentFragment();
+
+      const heading = document.createElement('h2');
+      heading.className = 'level-detail-heading';
+      heading.textContent = `第 ${levelId} 关 · ${LEVEL_TITLES[levelId]}`;
+      fragment.appendChild(heading);
+
+      const stars = document.createElement('p');
+      stars.className = 'level-detail-stars';
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        const bestScore = gameState.progress.levelBestScore[String(levelId)] || 0;
+        stars.textContent = bestScore > 0 ? `最高 ${bestScore} 题` : '60 秒内答对越多越好';
+      } else {
+        stars.textContent = formatStars(gameState.progress.levelStars[String(levelId)] || 0);
+      }
+      fragment.appendChild(stars);
+
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'primary-button level-detail-action';
+      action.disabled = !isUnlocked;
+      action.textContent = isUnlocked ? '开始' : '还没解锁';
+      if (isUnlocked) {
+        action.addEventListener('click', () => startLevel(levelId));
+      }
+      fragment.appendChild(action);
+
+      return fragment;
+    }
+
+    function renderLevelDetail() {
+      const container = elementById('level-detail');
+      container.replaceChildren(buildLevelDetail(gameState.selectedLevelId));
+    }
+
+    function selectLevel(levelId) {
+      gameState.selectedLevelId = levelId;
+      renderLevelMap();
     }
 
     function goToLevelMap() {
       clearFeedbackTimeout();
       clearChallengeClock();
       isFeedbackPending = false;
+      gameState.selectedLevelId = firstPlayableLevelId();
       renderLevelMap();
       showScreen(SCREEN_MAP);
     }
