@@ -14,7 +14,9 @@
 
 - **交付物是单个 `index.html`**，CSS 与 JS 全部内嵌。不得引用任何外部 CDN、字体、图片、音频文件。视觉用 emoji + CSS，音效用 Web Audio API 现场合成。
 - **游戏运行时零依赖、零构建、零网络请求。** `package.json` 只用于开发期跑测试，不得声明任何 `dependencies` / `devDependencies`。
-- **测试运行器**：Node.js 18 或以上。命令 `npm test`（等价于 `node --test tests/`）。
+- **测试运行器**：Node.js 18 或以上。命令 `npm test`，其脚本为 `node --test "tests/*.test.js"`。
+  **不要写成 `node --test tests/`** —— 在 Windows + Node 24 上目录参数会被当成模块入口，报 `Cannot find module ...\tests` 并以 exit 1 结束，一个测试都不会跑。
+- **本计划的代码已在 Windows 11 + Node v24.15.0 上实际组装并跑通（49/49 通过）**，演示输出与 spec §6 逐条核对一致。若你改了任何逻辑，改完必须重跑 `npm test`，不要靠推演。
 - **标识符、代码注释、日志、异常消息一律英文**；**面向孩子的界面文案一律中文**。
 - **绝不写单行块语句**——`if` / `for` / `while` / `try` / `catch` 的循环体一律另起一行并带花括号。
 - **每个 `switch` 必须有 `default` 分支。**
@@ -67,7 +69,7 @@
   "private": true,
   "description": "100 以内减法闯关游戏（单文件 HTML）",
   "scripts": {
-    "test": "node --test tests/"
+    "test": "node --test \"tests/*.test.js\""
   }
 }
 ```
@@ -156,6 +158,14 @@ const EXPORTED_NAMES = [
 
 let cachedExports = null;
 
+// Objects built inside the vm sandbox belong to a different realm than the
+// host's assert module, so assert.deepEqual compares prototypes and fails with
+// "Values have same structure but are not reference-equal". Round-tripping a
+// value through JSON puts it back in the host realm.
+function hostRealm(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 function buildExportSource() {
   const entries = EXPORTED_NAMES.map(
     (name) => `${name}: (typeof ${name} === 'undefined' ? undefined : ${name})`,
@@ -181,7 +191,7 @@ function loadGameLogic() {
   return cachedExports;
 }
 
-module.exports = { loadGameLogic };
+module.exports = { loadGameLogic, hostRealm };
 ```
 
 `tests/question-generator.test.js`（第一个测试，此刻必然失败）：
@@ -486,8 +496,11 @@ for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
 }
 
 test('every level has at least as many feasible pairs as questions it asks', () => {
-  for (const [levelId, questionCount] of Object.entries(logic.LEVEL_QUESTION_COUNTS)) {
-    const pairs = logic.feasiblePairsForLevel(Number(levelId));
+  // Level 9 is the mixed level: it has no pair set of its own, so it is
+  // excluded here.
+  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    const questionCount = logic.LEVEL_QUESTION_COUNTS[levelId];
+    const pairs = logic.feasiblePairsForLevel(levelId);
     assert.ok(
       pairs.length >= questionCount,
       `level ${levelId} has ${pairs.length} pairs but asks ${questionCount} questions`,
@@ -592,19 +605,25 @@ git commit -m "feat: 出题器与测试基础设施"
 **Interfaces:**
 - Consumes: `feasiblePairsForLevel(levelId)`、`onesDigit(value)`（Task 1）
 - Produces:
-  - `buildDemoSteps(a: number, b: number): { steps: string[], result: number }` —— 返回逐步演示。`steps` 每条形如 `"42 − 2 = 40"` 或 `"3 + 3 = 6"`；`result` 恒等于 `a - b`
-  - 常量：`DEMO_STRATEGY`（`BREAK_TEN` / `FLATTEN_TEN` / `SPLIT_SUBTRAHEND`）、`MAX_TEEN_MINUEND`、`ONES_PER_TEN`
+  - `buildDemoSteps(a: number, b: number): { steps: string[], result: number }` —— 返回逐步演示。`steps` 每条形如 `"42 − 2 = 40"` 或 `"个位：5 − 3 = 2"`；`result` 恒等于 `a - b`
+  - `needsBorrowing(a: number, b: number): boolean` —— 个位是否不够减
+  - 常量：`DEMO_STRATEGY`（`PLACE_VALUE` / `BREAK_TEN` / `FLATTEN_TEN` / `SPLIT_SUBTRAHEND`）、`MAX_TEEN_MINUEND`、`ONES_PER_TEN`
 
-**策略选择规则（源自 spec §6）：**
+**策略选择规则（源自 spec §6，并补上 spec 未覆盖的不退位情形）：**
 
 | 条件 | 策略 |
 |---|---|
-| 减数 ≥ 11（两位数） | `SPLIT_SUBTRAHEND` 分步减：先减整十，第二步按下面的规则**嵌套展开** |
-| 否则，被减数 ≤ 19（十几） | `BREAK_TEN` 破十法 |
-| 否则，被减数个位为 0（整十数） | `BREAK_TEN` 破十法 |
-| 否则 | `FLATTEN_TEN` 平十法 |
+| **不需要退位** | `PLACE_VALUE` 数位分解：个位归个位、十位归十位 |
+| 需要退位，且减数 ≥ 11（两位数） | `SPLIT_SUBTRAHEND` 分步减：先减整十，第二步**递归**调用本函数展开 |
+| 需要退位，被减数 ≤ 19（十几） | `BREAK_TEN` 破十法 |
+| 需要退位，被减数个位为 0（整十数） | `BREAK_TEN` 破十法 |
+| 需要退位，其余 | `FLATTEN_TEN` 平十法 |
 
-嵌套展开的第二步：中间结果个位非零 → `FLATTEN_TEN`；中间结果是整十数 → `BREAK_TEN`。
+「需要退位」的判据：被减数个位 < 减数个位（减数是一位数时即减数本身）。
+
+**为什么必须补 `PLACE_VALUE`：** spec §6 的表只列了第 4–8 关（退位）的演示，第 1–3 关（不退位）从未定义，而 §5.1 要求每次答错都弹演示。若把不退位题硬套平十法，`45 − 3` 会算出 `40 − -2 = 42` —— 在产品的教学面上输出负数。数位分解与破十法同构（都是「先算个位、再合十位」），孩子后面学「个位不够减要借」时才有落脚点。
+
+**演示步骤的文本格式：** `[<标签>：]<表达式>`，标签可选。退位策略沿用 spec §6 给出的无标签写法；`PLACE_VALUE` 用 `个位：` / `十位：` / `合起来：` 三个标签。自检时剥掉可选标签再校验算式。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -616,14 +635,14 @@ git commit -m "feat: 出题器与测试基础设施"
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { loadGameLogic } = require('./game-script-loader');
+const { loadGameLogic, hostRealm } = require('./game-script-loader');
 
 const logic = loadGameLogic();
 
-test('the demo for 13 - 7 uses the break-ten strategy', () => {
-  const demo = logic.buildDemoSteps(13, 7);
-  assert.deepEqual(demo.steps, ['10 − 7 = 3', '3 + 3 = 6']);
-  assert.equal(demo.result, 6);
+test('the demo for 45 - 3 breaks the numbers into place values', () => {
+  const demo = logic.buildDemoSteps(45, 3);
+  assert.deepEqual(hostRealm(demo.steps), ['个位：5 − 3 = 2', '合起来：40 + 2 = 42']);
+  assert.equal(demo.result, 42);
 });
 ```
 
@@ -638,12 +657,28 @@ Expected: FAIL —— `logic.buildDemoSteps is not a function`
 
 ```js
     const DEMO_STRATEGY = {
+      PLACE_VALUE: 'placeValue',
       BREAK_TEN: 'breakTen',
       FLATTEN_TEN: 'flattenTen',
       SPLIT_SUBTRAHEND: 'splitSubtrahend',
     };
 
+    const PLACE_LABEL_ONES = '个位';
+    const PLACE_LABEL_TENS = '十位';
+    const PLACE_LABEL_COMBINE = '合起来';
+
+    function subtrahendOnesDigit(b) {
+      return b >= MIN_TWO_DIGIT_NUMBER ? onesDigit(b) : b;
+    }
+
+    function needsBorrowing(a, b) {
+      return onesDigit(a) < subtrahendOnesDigit(b);
+    }
+
     function selectDemoStrategy(a, b) {
+      if (!needsBorrowing(a, b)) {
+        return DEMO_STRATEGY.PLACE_VALUE;
+      }
       if (b >= MIN_TWO_DIGIT_NUMBER) {
         return DEMO_STRATEGY.SPLIT_SUBTRAHEND;
       }
@@ -651,6 +686,25 @@ Expected: FAIL —— `logic.buildDemoSteps is not a function`
         return DEMO_STRATEGY.BREAK_TEN;
       }
       return DEMO_STRATEGY.FLATTEN_TEN;
+    }
+
+    function buildPlaceValueSteps(a, b) {
+      const minuendOnes = onesDigit(a);
+      const minuendTens = Math.floor(a / ONES_PER_TEN);
+      const subtrahendTens = Math.floor(b / ONES_PER_TEN);
+      const onesResult = minuendOnes - subtrahendOnesDigit(b);
+      const steps = [
+        `${PLACE_LABEL_ONES}：${minuendOnes} − ${subtrahendOnesDigit(b)} = ${onesResult}`,
+      ];
+      let tensResult = minuendTens;
+      if (subtrahendTens > 0) {
+        tensResult = minuendTens - subtrahendTens;
+        steps.push(`${PLACE_LABEL_TENS}：${minuendTens} − ${subtrahendTens} = ${tensResult}`);
+      }
+      steps.push(
+        `${PLACE_LABEL_COMBINE}：${tensResult * ONES_PER_TEN} + ${onesResult} = ${a - b}`,
+      );
+      return { steps, result: a - b };
     }
 
     function buildBreakTenSteps(a, b) {
@@ -682,10 +736,7 @@ Expected: FAIL —— `logic.buildDemoSteps is not a function`
       if (subtrahend === 0) {
         return [];
       }
-      if (onesDigit(intermediate) === 0) {
-        return buildBreakTenSteps(intermediate, subtrahend).steps;
-      }
-      return buildFlattenTenSteps(intermediate, subtrahend).steps;
+      return buildDemoSteps(intermediate, subtrahend).steps;
     }
 
     function buildSplitSubtrahendSteps(a, b) {
@@ -702,6 +753,8 @@ Expected: FAIL —— `logic.buildDemoSteps is not a function`
 
     function buildDemoSteps(a, b) {
       switch (selectDemoStrategy(a, b)) {
+        case DEMO_STRATEGY.PLACE_VALUE:
+          return buildPlaceValueSteps(a, b);
         case DEMO_STRATEGY.BREAK_TEN:
           return buildBreakTenSteps(a, b);
         case DEMO_STRATEGY.FLATTEN_TEN:
@@ -729,69 +782,89 @@ Expected: PASS
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { loadGameLogic } = require('./game-script-loader');
+const { loadGameLogic, hostRealm } = require('./game-script-loader');
 
 const logic = loadGameLogic();
 
-const SUBTRACTION_STEP_PATTERN = /^(\d+) − (\d+) = (\d+)$/;
-const ADDITION_STEP_PATTERN = /^(\d+) \+ (\d+) = (\d+)$/;
+// A step reads "[<label>：]<a> <op> <b> = <c>", where the label is optional
+// (the borrowing strategies have none, the place-value one does).
+const STEP_PATTERN = /^(?:[^：]+：)?(\d+) ([−+]) (\d+) = (\d+)$/;
+
+function parseStep(step) {
+  const match = STEP_PATTERN.exec(step);
+  assert.ok(match !== null, `step has an unexpected shape: ${step}`);
+  return { left: Number(match[1]), operator: match[2], right: Number(match[3]), result: Number(match[4]) };
+}
 
 function assertStepIsArithmeticallyTrue(step) {
-  const subtraction = SUBTRACTION_STEP_PATTERN.exec(step);
-  if (subtraction !== null) {
-    assert.equal(Number(subtraction[1]) - Number(subtraction[2]), Number(subtraction[3]), `bad step: ${step}`);
-    return;
-  }
-  const addition = ADDITION_STEP_PATTERN.exec(step);
-  assert.ok(addition !== null, `step has an unexpected shape: ${step}`);
-  assert.equal(Number(addition[1]) + Number(addition[2]), Number(addition[3]), `bad step: ${step}`);
+  const parsed = parseStep(step);
+  const expected = parsed.operator === '−' ? parsed.left - parsed.right : parsed.left + parsed.right;
+  assert.equal(expected, parsed.result, `bad step: ${step}`);
 }
 
 function lastStepResult(steps) {
-  const last = steps[steps.length - 1];
-  const subtraction = SUBTRACTION_STEP_PATTERN.exec(last);
-  if (subtraction !== null) {
-    return Number(subtraction[3]);
-  }
-  const addition = ADDITION_STEP_PATTERN.exec(last);
-  assert.ok(addition !== null, `last step has an unexpected shape: ${last}`);
-  return Number(addition[3]);
+  return parseStep(steps[steps.length - 1]).result;
 }
+
+test('the demo for 45 - 3 breaks the numbers into place values', () => {
+  const demo = logic.buildDemoSteps(45, 3);
+  assert.deepEqual(hostRealm(demo.steps), ['个位：5 − 3 = 2', '合起来：40 + 2 = 42']);
+  assert.equal(demo.result, 42);
+});
+
+test('the demo for 45 - 23 breaks both place values apart', () => {
+  const demo = logic.buildDemoSteps(45, 23);
+  assert.deepEqual(hostRealm(demo.steps), ['个位：5 − 3 = 2', '十位：4 − 2 = 2', '合起来：20 + 2 = 22']);
+  assert.equal(demo.result, 22);
+});
 
 test('the demo for 13 - 7 uses the break-ten strategy', () => {
   const demo = logic.buildDemoSteps(13, 7);
-  assert.deepEqual(demo.steps, ['10 − 7 = 3', '3 + 3 = 6']);
+  assert.deepEqual(hostRealm(demo.steps), ['10 − 7 = 3', '3 + 3 = 6']);
   assert.equal(demo.result, 6);
 });
 
 test('the demo for 42 - 7 uses the flatten-ten strategy', () => {
   const demo = logic.buildDemoSteps(42, 7);
-  assert.deepEqual(demo.steps, ['42 − 2 = 40', '40 − 5 = 35']);
+  assert.deepEqual(hostRealm(demo.steps), ['42 − 2 = 40', '40 − 5 = 35']);
   assert.equal(demo.result, 35);
 });
 
 test('the demo for 40 - 7 uses the break-ten strategy', () => {
   const demo = logic.buildDemoSteps(40, 7);
-  assert.deepEqual(demo.steps, ['10 − 7 = 3', '30 + 3 = 33']);
+  assert.deepEqual(hostRealm(demo.steps), ['10 − 7 = 3', '30 + 3 = 33']);
   assert.equal(demo.result, 33);
 });
 
 test('the demo for 42 - 27 nests a flatten-ten step', () => {
   const demo = logic.buildDemoSteps(42, 27);
-  assert.deepEqual(demo.steps, ['42 − 20 = 22', '22 − 2 = 20', '20 − 5 = 15']);
+  assert.deepEqual(hostRealm(demo.steps), ['42 − 20 = 22', '22 − 2 = 20', '20 − 5 = 15']);
   assert.equal(demo.result, 15);
 });
 
 test('the demo for 40 - 27 nests a break-ten step', () => {
   const demo = logic.buildDemoSteps(40, 27);
-  assert.deepEqual(demo.steps, ['40 − 20 = 20', '10 − 7 = 3', '10 + 3 = 13']);
+  assert.deepEqual(hostRealm(demo.steps), ['40 − 20 = 20', '10 − 7 = 3', '10 + 3 = 13']);
   assert.equal(demo.result, 13);
 });
 
 test('the demo for 100 - 37 nests a break-ten step', () => {
   const demo = logic.buildDemoSteps(100, 37);
-  assert.deepEqual(demo.steps, ['100 − 30 = 70', '10 − 7 = 3', '60 + 3 = 63']);
+  assert.deepEqual(hostRealm(demo.steps), ['100 − 30 = 70', '10 − 7 = 3', '60 + 3 = 63']);
   assert.equal(demo.result, 63);
+});
+
+test('no demo step ever contains a negative operand', () => {
+  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
+      for (const step of logic.buildDemoSteps(a, b).steps) {
+        assert.ok(
+          !step.includes('− -') && !step.includes('+ -'),
+          `negative operand in the ${a} - ${b} demo: ${step}`,
+        );
+      }
+    }
+  }
 });
 
 test('every demo step is arithmetically true and lands on the correct difference', () => {
@@ -945,6 +1018,29 @@ Expected: FAIL —— `logic.computeStars is not a function`
       return typeof value === 'object' && value !== null && !Array.isArray(value);
     }
 
+    function isValidWrongAnswer(entry) {
+      return isPlainObject(entry)
+        && Number.isInteger(entry.a)
+        && Number.isInteger(entry.b)
+        && entry.a > 0
+        && entry.b > 0
+        && entry.b < entry.a;
+    }
+
+    // A hand-edited or half-written save can hold entries the game would then
+    // feed straight into the question generator, producing "undefined −
+    // undefined = ?". Drop anything that is not a usable question.
+    function parseWrongAnswers(value) {
+      if (!Array.isArray(value)) {
+        return [];
+      }
+      return value.filter(isValidWrongAnswer).map((entry) => ({
+        a: entry.a,
+        b: entry.b,
+        count: Number.isInteger(entry.count) && entry.count > 0 ? entry.count : 1,
+      }));
+    }
+
     function parseProgress(rawValue) {
       if (typeof rawValue !== 'string') {
         return createInitialProgress();
@@ -957,7 +1053,7 @@ Expected: FAIL —— `logic.computeStars is not a function`
         return {
           levelStars: isPlainObject(parsed.levelStars) ? parsed.levelStars : {},
           levelBestScore: isPlainObject(parsed.levelBestScore) ? parsed.levelBestScore : {},
-          wrongAnswers: Array.isArray(parsed.wrongAnswers) ? parsed.wrongAnswers : [],
+          wrongAnswers: parseWrongAnswers(parsed.wrongAnswers),
           isMuted: parsed.isMuted === true,
         };
       } catch (error) {
@@ -1042,7 +1138,7 @@ Expected: PASS
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { loadGameLogic } = require('./game-script-loader');
+const { loadGameLogic, hostRealm } = require('./game-script-loader');
 
 const logic = loadGameLogic();
 
@@ -1100,13 +1196,13 @@ test('a wrong answer is tracked, then counted up on repeat', () => {
   const progress = logic.createInitialProgress();
   logic.mergeAnswerIntoProgress(progress, { a: 42, b: 7 }, false);
   logic.mergeAnswerIntoProgress(progress, { a: 42, b: 7 }, false);
-  assert.deepEqual(progress.wrongAnswers, [{ a: 42, b: 7, count: 2 }]);
+  assert.deepEqual(hostRealm(progress.wrongAnswers), [{ a: 42, b: 7, count: 2 }]);
 });
 
 test('a correct answer is not tracked', () => {
   const progress = logic.createInitialProgress();
   logic.mergeAnswerIntoProgress(progress, { a: 42, b: 7 }, true);
-  assert.deepEqual(progress.wrongAnswers, []);
+  assert.deepEqual(hostRealm(progress.wrongAnswers), []);
 });
 
 test('the tracked wrong answers list is capped', () => {
@@ -1133,9 +1229,23 @@ test('a missing or corrupt saved value falls back to a fresh profile', () => {
 
 test('a partial saved value keeps what is valid', () => {
   const parsed = logic.parseProgress('{"levelStars":{"1":2},"wrongAnswers":"nope"}');
-  assert.deepEqual(parsed.levelStars, { '1': 2 });
-  assert.deepEqual(parsed.wrongAnswers, []);
+  assert.deepEqual(hostRealm(parsed.levelStars), { '1': 2 });
+  assert.deepEqual(hostRealm(parsed.wrongAnswers), []);
   assert.equal(parsed.isMuted, false);
+});
+
+test('a malformed wrong answer entry is dropped at parse time', () => {
+  const raw = '{"wrongAnswers":[{"a":"x"},{"a":42,"b":7},{"a":42,"b":7,"count":3},{"a":7,"b":42}]}';
+  const parsed = logic.parseProgress(raw);
+  assert.deepEqual(hostRealm(parsed.wrongAnswers), [
+    { a: 42, b: 7, count: 1 },
+    { a: 42, b: 7, count: 3 },
+  ]);
+});
+
+test('a missing or invalid count falls back to one', () => {
+  const parsed = logic.parseProgress('{"wrongAnswers":[{"a":42,"b":7,"count":-5}]}');
+  assert.deepEqual(hostRealm(parsed.wrongAnswers), [{ a: 42, b: 7, count: 1 }]);
 });
 
 test('a leading zero is dropped because the answer is never zero', () => {
@@ -1190,9 +1300,13 @@ git commit -m "feat: 进度模型与输入规则"
   - `loadProgress(): Progress` / `saveProgress(progress): void`
   - 常量：`SCREEN_MAP`、`SCREEN_PLAY`、`SCREEN_RESULT`、`MAX_STARS = 3`、`STAR_FILLED`、`STAR_EMPTY`、`MUTE_ICON_ON`、`MUTE_ICON_OFF`
 
-- [ ] **Step 1: 替换 `index.html` 的 `<body>`**
+- [ ] **Step 1: 替换 `index.html` 的 body 占位元素**
 
-把现有 `<body>...</body>` 整段替换为下面内容（`<style>` 仍保持为空，Task 10 填）。
+把 `<body>` 里那一行 `<main id="app"></main>` 替换为下面内容。
+
+**只替换这一行。** 两个 `<script>` 块（`game-logic` 与 `game-ui`）必须原样保留在 `</body>` 之前 —— 本步骤新增的只是界面结构，不是整段 body。若照「整段替换 body」执行，两个 script 块会被删掉，测试随即报 `No <script id="game-logic"> block found`。
+
+`<style>` 仍保持为空，Task 10 填。
 
 ```html
 <body>
@@ -1235,6 +1349,7 @@ git commit -m "feat: 进度模型与输入规则"
     <h2 id="result-heading" class="screen-title"></h2>
     <p id="result-stars" class="result-stars"></p>
     <p id="result-summary" class="result-summary"></p>
+    <p id="result-wrong-review" class="result-wrong-review"></p>
     <div class="result-actions">
       <button id="result-primary" type="button" class="primary-button"></button>
       <button id="result-replay" type="button" class="secondary-button">再来一次</button>
@@ -1322,7 +1437,14 @@ git commit -m "feat: 进度模型与输入规则"
 
       const stars = document.createElement('span');
       stars.className = 'level-stars';
-      stars.textContent = formatStars(gameState.progress.levelStars[String(levelId)] || 0);
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        // The timed challenge is never awarded stars, so showing three empty
+        // ones would be a lie. Show its best score instead.
+        const bestScore = gameState.progress.levelBestScore[String(levelId)] || 0;
+        stars.textContent = bestScore > 0 ? `最高 ${bestScore} 题` : '';
+      } else {
+        stars.textContent = formatStars(gameState.progress.levelStars[String(levelId)] || 0);
+      }
 
       button.append(number, title, stars);
       item.appendChild(button);
@@ -1338,6 +1460,7 @@ git commit -m "feat: 进度模型与输入规则"
     }
 
     function goToLevelMap() {
+      clearFeedbackTimeout();
       renderLevelMap();
       showScreen(SCREEN_MAP);
     }
@@ -1400,6 +1523,7 @@ git commit -m "feat: 页面骨架与关卡地图"
 ```js
     const KEYPAD_DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
     const FEEDBACK_DELAY_MS = 400;
+    const ONES_DIGIT_CLASS = 'ones-digit';
     const FEEDBACK_CLASS_CORRECT = 'is-correct';
     const FEEDBACK_CLASS_WRONG = 'is-wrong';
     const COMBO_VISIBLE_FROM = 3;
@@ -1458,8 +1582,33 @@ git commit -m "feat: 页面骨架与关卡地图"
       presentNextQuestion();
     }
 
+    function buildDigitNodes(value) {
+      const digits = String(value).split('');
+      const lastIndex = digits.length - 1;
+      return digits.map((digit, index) => {
+        const span = document.createElement('span');
+        span.className = index === lastIndex ? `digit ${ONES_DIGIT_CLASS}` : 'digit';
+        span.textContent = digit;
+        return span;
+      });
+    }
+
+    // The ones digits get their own elements so the hint styles can colour and
+    // ring them without touching the rest of the question.
+    function renderQuestionText() {
+      const question = gameState.currentQuestion;
+      const container = elementById('question-text');
+      container.setAttribute('aria-label', formatQuestion(question));
+      container.replaceChildren(
+        ...buildDigitNodes(question.a),
+        document.createTextNode(' − '),
+        ...buildDigitNodes(question.b),
+        document.createTextNode(' = ?'),
+      );
+    }
+
     function renderQuestion() {
-      elementById('question-text').textContent = formatQuestion(gameState.currentQuestion);
+      renderQuestionText();
       elementById('question-text').classList.remove(FEEDBACK_CLASS_CORRECT, FEEDBACK_CLASS_WRONG);
       elementById('hint-text').textContent = '';
       if (gameState.isRetrying) {
@@ -1525,6 +1674,23 @@ git commit -m "feat: 页面骨架与关卡地图"
       questionText.classList.add(feedbackClass);
     }
 
+    let feedbackTimeoutId = null;
+
+    // A pending "next question" callback must not survive leaving the level:
+    // if it fired after a new level started it would consume one of that
+    // level's questions before the child ever saw it.
+    function clearFeedbackTimeout() {
+      if (feedbackTimeoutId !== null) {
+        window.clearTimeout(feedbackTimeoutId);
+        feedbackTimeoutId = null;
+      }
+    }
+
+    function scheduleNextQuestion(delayMs) {
+      clearFeedbackTimeout();
+      feedbackTimeoutId = window.setTimeout(presentNextQuestion, delayMs);
+    }
+
     function submitAnswer() {
       if (!canSubmitAnswer(gameState.currentInput)) {
         return;
@@ -1546,7 +1712,7 @@ git commit -m "feat: 页面骨架与关卡地图"
       }
       renderCombo();
       flashQuestion(FEEDBACK_CLASS_CORRECT);
-      window.setTimeout(presentNextQuestion, FEEDBACK_DELAY_MS);
+      scheduleNextQuestion(FEEDBACK_DELAY_MS);
     }
 
     function handleWrongAnswer() {
@@ -1688,7 +1854,9 @@ git commit -m "feat: 单题流程、屏幕键盘与连击"
     const RESULT_PASS_HEADING = '过关啦！';
     const RESULT_FAIL_HEADING = '再试一次吧';
     const RESULT_NEXT_LABEL = '下一关';
-    const RESULT_RETRY_LABEL = '重新挑战';
+    const RESULT_RETRY_LABEL = '再来一次';
+    const RESULT_WRONG_REVIEW_PREFIX = '错题回顾：';
+    const RESULT_NO_WRONG_REVIEW = '这一关全对，没有错题！';
 
     function finishLevel() {
       finishStandardLevel();
@@ -1705,14 +1873,26 @@ git commit -m "feat: 单题流程、屏幕键盘与连击"
       showScreen(SCREEN_RESULT);
     }
 
+    function buildWrongReviewText() {
+      if (gameState.wrongQuestions.length === 0) {
+        return RESULT_NO_WRONG_REVIEW;
+      }
+      const list = gameState.wrongQuestions
+        .map((question) => `${question.a} − ${question.b}`)
+        .join('、');
+      return `${RESULT_WRONG_REVIEW_PREFIX}${list}`;
+    }
+
     function renderResult(levelId, stars, isPassed, total) {
       elementById('result-heading').textContent = isPassed ? RESULT_PASS_HEADING : RESULT_FAIL_HEADING;
       elementById('result-stars').textContent = formatStars(stars);
       elementById('result-summary').textContent = `答对 ${gameState.correctCount} / ${total} 题`;
+      elementById('result-wrong-review').textContent = buildWrongReviewText();
 
       const hasNextLevel = levelId < LEVEL_COUNT;
+      const primaryLabel = isPassed && hasNextLevel ? RESULT_NEXT_LABEL : RESULT_RETRY_LABEL;
       const primary = elementById('result-primary');
-      primary.textContent = isPassed && hasNextLevel ? RESULT_NEXT_LABEL : RESULT_RETRY_LABEL;
+      primary.textContent = primaryLabel;
       primary.onclick = () => {
         if (isPassed && hasNextLevel) {
           startLevel(levelId + 1);
@@ -1721,7 +1901,11 @@ git commit -m "feat: 单题流程、屏幕键盘与连击"
         startLevel(levelId);
       };
 
-      elementById('result-replay').onclick = () => startLevel(levelId);
+      // When the primary button already restarts the level, a second restart
+      // button next to it is just noise.
+      const replay = elementById('result-replay');
+      replay.hidden = primaryLabel === RESULT_RETRY_LABEL;
+      replay.onclick = () => startLevel(levelId);
       elementById('result-back').onclick = goToLevelMap;
     }
 ```
@@ -1759,7 +1943,7 @@ git commit -m "feat: 关卡结算、星级与解锁"
 - Modify: `index.html`（`<script id="game-ui">` 分区）
 
 **Interfaces:**
-- Consumes: `onesDigit`（Task 1，`game-logic` 分区）、`MIN_TWO_DIGIT_NUMBER`、`ONES_PER_TEN`（Task 1）
+- Consumes: `onesDigit`、`needsBorrowing`（Task 2，`game-logic` 分区）、`MIN_TWO_DIGIT_NUMBER`、`ONES_PER_TEN`（Task 1）
 - Produces:
   - `startHintTimers(): void` / `clearHintTimers(): void`
   - `showWeakHint(): void` / `showStrongHint(): void`
@@ -1780,20 +1964,16 @@ git commit -m "feat: 关卡结算、星级与解锁"
     const HINT_BORROW_TEMPLATE = '个位 {ones} 减 {subtrahendOnes} 不够减，要向十位借 1 个十';
     const HINT_PLAIN_TEXT = '先算个位，再算十位';
 
-    function needsBorrowing(question) {
+    // needsBorrowing lives in the game-logic block; do not redefine it here —
+    // both blocks share the page's global scope and a second definition would
+    // silently overwrite the one the demo generator uses.
+    function buildStrongHintText(question) {
       const subtrahendOnes = question.b >= MIN_TWO_DIGIT_NUMBER
         ? question.b % ONES_PER_TEN
         : question.b;
-      return onesDigit(question.a) < subtrahendOnes;
-    }
-
-    function buildStrongHintText(question) {
-      if (!needsBorrowing(question)) {
+      if (!needsBorrowing(question.a, question.b)) {
         return HINT_PLAIN_TEXT;
       }
-      const subtrahendOnes = question.b >= MIN_TWO_DIGIT_NUMBER
-        ? question.b % ONES_PER_TEN
-        : question.b;
       return HINT_BORROW_TEMPLATE
         .replace('{ones}', String(onesDigit(question.a)))
         .replace('{subtrahendOnes}', String(subtrahendOnes));
@@ -2269,10 +2449,11 @@ Expected: PASS
       elementById('result-stars').textContent = '';
       elementById('result-summary').textContent =
         `${TIMED_CHALLENGE_SECONDS} 秒答对 ${gameState.correctCount} 题 · 最高纪录 ${bestScore} 题`;
+      elementById('result-wrong-review').textContent = buildWrongReviewText();
       const primary = elementById('result-primary');
       primary.textContent = RESULT_RETRY_LABEL;
       primary.onclick = () => startLevel(TIMED_CHALLENGE_LEVEL_ID);
-      elementById('result-replay').onclick = () => startLevel(TIMED_CHALLENGE_LEVEL_ID);
+      elementById('result-replay').hidden = true;
       elementById('result-back').onclick = goToLevelMap;
       showScreen(SCREEN_RESULT);
     }
@@ -2390,7 +2571,7 @@ Expected: PASS
       if (isTimedChallenge()) {
         const answer = gameState.currentQuestion.a - gameState.currentQuestion.b;
         elementById('hint-text').textContent = `正确答案是 ${answer}`;
-        window.setTimeout(presentNextQuestion, CHALLENGE_FEEDBACK_DELAY_MS);
+        scheduleNextQuestion(CHALLENGE_FEEDBACK_DELAY_MS);
         return;
       }
       showDemo(gameState.currentQuestion);
@@ -2412,6 +2593,7 @@ Expected: PASS
 ```js
     function finishLevel() {
       clearHintTimers();
+      clearFeedbackTimeout();
       if (isTimedChallenge()) {
         finishTimedChallenge();
         return;
@@ -2647,13 +2829,16 @@ git commit -m "feat: 限时挑战关"
         letter-spacing: 2px;
       }
 
-      .question-area.is-weak-hint .question-text::after {
-        content: "";
+      .question-area.is-weak-hint .ones-digit {
+        color: var(--color-primary);
       }
 
-      .question-area.is-strong-hint {
-        outline: 4px dashed var(--color-primary);
-        outline-offset: 4px;
+      .question-area.is-strong-hint .ones-digit {
+        display: inline-block;
+        min-width: 1.15em;
+        border: 4px solid var(--color-primary);
+        border-radius: 50%;
+        color: var(--color-primary-dark);
       }
 
       .question-text.is-correct {
@@ -2790,6 +2975,14 @@ git commit -m "feat: 限时挑战关"
         margin: 0;
         font-size: 20px;
         color: var(--color-muted);
+      }
+
+      .result-wrong-review {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.6;
+        color: var(--color-primary-dark);
+        text-align: center;
       }
 
       .result-actions {
