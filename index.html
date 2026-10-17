@@ -63,7 +63,11 @@
 
       .screen {
         width: 100%;
-        max-width: 760px;
+        /* Wide enough to hold the whole star map: 10 nodes x 64px + 9 gaps x
+           28px + the map's own 16px padding = 908px. At 760px the map always
+           scrolled, which put a native scrollbar across the space-themed home
+           screen. Narrow viewports still scroll (see .star-map-scroll). */
+        max-width: 940px;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -112,8 +116,16 @@
         width: 100%;
         overflow-x: auto;
         padding: 26px 4px 4px;
-        scrollbar-width: thin;
+        /* Hide the native bar: on Windows it is a bright grey slab that fights
+           the space theme, and on a tablet it is meaningless. The map still
+           scrolls by drag/swipe, and renderLevelMap centres the selected node
+           so a child never has to hunt for it. */
+        scrollbar-width: none;
         scroll-behavior: smooth;
+      }
+
+      .star-map-scroll::-webkit-scrollbar {
+        display: none;
       }
 
       /* 10 nodes x 64px + 9 gaps x 28px = 892px, wider than .screen's 760px,
