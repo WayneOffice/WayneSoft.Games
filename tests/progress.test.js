@@ -206,3 +206,16 @@ test('the timed challenge records a best score without awarding stars', () => {
 test('the timed challenge lasts sixty seconds', () => {
   assert.equal(logic.TIMED_CHALLENGE_SECONDS, 60);
 });
+
+// Both recorders delegate to one shared best-score update, so a lower score
+// from either one must never overwrite a higher one from the other.
+test('a level and the timed challenge share one best score', () => {
+  const progress = logic.createInitialProgress();
+  logic.recordLevelResult(progress, 1, 10, 10);
+  logic.recordChallengeScore(progress, 1, 7);
+  assert.equal(progress.levelBestScore['1'], 10);
+  logic.recordChallengeScore(progress, 1, 12);
+  assert.equal(progress.levelBestScore['1'], 12);
+  logic.recordLevelResult(progress, 1, 4, 10);
+  assert.equal(progress.levelBestScore['1'], 12);
+});

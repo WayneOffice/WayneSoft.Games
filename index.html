@@ -564,26 +564,29 @@
       return progress;
     }
 
-    function recordLevelResult(progress, levelId, correctCount, questionCount) {
+    function recordBestScore(progress, levelId, correctCount) {
       const key = String(levelId);
-      const stars = computeStars(correctCount, questionCount);
-      if (stars > (progress.levelStars[key] || 0)) {
-        progress.levelStars[key] = stars;
-      }
       if (correctCount > (progress.levelBestScore[key] || 0)) {
         progress.levelBestScore[key] = correctCount;
       }
       return progress;
     }
 
+    function recordLevelResult(progress, levelId, correctCount, questionCount) {
+      const key = String(levelId);
+      const stars = computeStars(correctCount, questionCount);
+      if (stars > (progress.levelStars[key] || 0)) {
+        progress.levelStars[key] = stars;
+      }
+      return recordBestScore(progress, levelId, correctCount);
+    }
+
     const TIMED_CHALLENGE_SECONDS = 60;
 
+    // The timed challenge never earns stars (spec §3.2), so it records only the
+    // best score.
     function recordChallengeScore(progress, levelId, correctCount) {
-      const key = String(levelId);
-      if (correctCount > (progress.levelBestScore[key] || 0)) {
-        progress.levelBestScore[key] = correctCount;
-      }
-      return progress;
+      return recordBestScore(progress, levelId, correctCount);
     }
 
     function appendDigit(currentInput, digit) {
@@ -1057,6 +1060,7 @@
     }
 
     function skipQuestion() {
+      clearFeedbackTimeout();
       clearHintTimers();
       presentNextQuestion();
     }
