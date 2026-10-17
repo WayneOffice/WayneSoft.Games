@@ -7,6 +7,26 @@ const vm = require('node:vm');
 const INDEX_HTML_PATH = path.join(__dirname, '..', 'index.html');
 const LOGIC_SCRIPT_PATTERN = /<script id="game-logic">([\s\S]*?)<\/script>/;
 
+// game-logic must stay evaluable without a DOM: the sandbox below is a bare
+// { console }, so the harness's isolation is only real while the block holds no
+// DOM or timer reference. A top-level reference would throw at load, but one
+// buried inside a function body would not surface until that function ran —
+// which is exactly how presentation logic leaks into a "pure" block.
+const DOM_DEPENDENT_IDENTIFIERS = ['document', 'window', 'localStorage', 'setTimeout', 'setInterval'];
+
+function assertLogicBlockIsDomFree(source) {
+  const leaks = DOM_DEPENDENT_IDENTIFIERS.filter((name) => new RegExp(`\\b${name}\\b`).test(source));
+  if (leaks.length === 0) {
+    return;
+  }
+  throw new Error(
+    `The game-logic block references ${leaks.join(', ')}, but it must stay evaluable without a DOM. ` +
+    'The test harness runs this block in a bare { console } sandbox, so any DOM or timer reference ' +
+    'breaks the block\'s isolation: a reference inside a function body would only fail once that ' +
+    'function ran, and the harness\'s "pure logic" guarantee would be fiction.',
+  );
+}
+
 // Every name the tests reach for. Names not yet defined by the current
 // implementation resolve to undefined instead of throwing, so this loader
 // keeps working while the game is built up task by task.
@@ -70,6 +90,7 @@ function loadGameLogic() {
   if (match === null) {
     throw new Error('No <script id="game-logic"> block found in index.html');
   }
+  assertLogicBlockIsDomFree(match[1]);
   const sandbox = { console };
   vm.createContext(sandbox);
   vm.runInContext(match[1] + buildExportSource(), sandbox, {

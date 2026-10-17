@@ -523,6 +523,9 @@
       }
 
       .result-stars {
+        /* Positioning context for the 过关 spark burst, which is anchored to
+           the star line rather than the whole result screen. */
+        position: relative;
         margin: 0;
         font-size: 52px;
         line-height: 1.1;
@@ -1129,7 +1132,8 @@
         && Number.isInteger(entry.b)
         && entry.a > 0
         && entry.b > 0
-        && entry.b < entry.a;
+        && entry.b < entry.a
+        && entry.a <= MAX_MINUEND_WITH_HUNDRED;
     }
 
     // A hand-edited or half-written save can hold entries the game would then
@@ -1139,11 +1143,14 @@
       if (!Array.isArray(value)) {
         return [];
       }
-      return value.filter(isValidWrongAnswer).map((entry) => ({
-        a: entry.a,
-        b: entry.b,
-        count: Number.isInteger(entry.count) && entry.count > 0 ? entry.count : 1,
-      }));
+      return value
+        .filter(isValidWrongAnswer)
+        .slice(-MAX_TRACKED_WRONG_ANSWERS)
+        .map((entry) => ({
+          a: entry.a,
+          b: entry.b,
+          count: Number.isInteger(entry.count) && entry.count > 0 ? entry.count : 1,
+        }));
     }
 
     // A hand-edited or half-written save can hold a star count outside
@@ -1180,6 +1187,53 @@
       return sanitizeRecord(value, isValidBestScore);
     }
 
+    // Spec §8 requires corrupt saved data to fall back to a fresh state *and be
+    // logged*. The sanitizers silently drop or repair individual entries, so
+    // these counters let parseProgress report what was discarded. They report
+    // the affected field and count, never the offending value itself.
+    function countDroppedRecordEntries(value, isValidEntry) {
+      if (!isPlainObject(value)) {
+        return 0;
+      }
+      return Object.values(value).filter((entry) => !isValidEntry(entry)).length;
+    }
+
+    function countDroppedWrongAnswers(value) {
+      if (!Array.isArray(value)) {
+        return 0;
+      }
+      return value.filter((entry) => !isValidWrongAnswer(entry)).length;
+    }
+
+    // Repaired entries are valid wrong answers whose count was missing or
+    // invalid and was reset to one rather than dropped.
+    function countRepairedWrongAnswerCounts(value) {
+      if (!Array.isArray(value)) {
+        return 0;
+      }
+      return value
+        .filter(isValidWrongAnswer)
+        .filter((entry) => !(Number.isInteger(entry.count) && entry.count > 0))
+        .length;
+    }
+
+    function logDiscardedProgress(parsed) {
+      const discarded = [
+        { label: 'levelStars entries', count: countDroppedRecordEntries(parsed.levelStars, isValidLevelStars) },
+        { label: 'levelBestScore entries', count: countDroppedRecordEntries(parsed.levelBestScore, isValidBestScore) },
+        { label: 'wrongAnswers entries', count: countDroppedWrongAnswers(parsed.wrongAnswers) },
+        { label: 'wrongAnswers counts', count: countRepairedWrongAnswerCounts(parsed.wrongAnswers) },
+      ].filter((entry) => entry.count > 0);
+      if (discarded.length === 0) {
+        return;
+      }
+      const summary = discarded.map((entry) => `${entry.count} ${entry.label}`).join(', ');
+      console.warn(
+        `Dropped or repaired corrupt saved progress: ${summary}. ` +
+        'Each affected value had an unexpected shape (spec §8) and was discarded; the rest was kept.',
+      );
+    }
+
     function parseProgress(rawValue) {
       if (typeof rawValue !== 'string') {
         return createInitialProgress();
@@ -1189,6 +1243,7 @@
         if (!isPlainObject(parsed)) {
           return createInitialProgress();
         }
+        logDiscardedProgress(parsed);
         return {
           levelStars: sanitizeLevelStars(parsed.levelStars),
           levelBestScore: sanitizeLevelBestScore(parsed.levelBestScore),
@@ -1225,18 +1280,17 @@
         if (index >= 0) {
           progress.wrongAnswers.splice(index, 1);
         }
-        return progress;
+        return;
       }
       const existing = progress.wrongAnswers.find((entry) => questionKey(entry) === key);
       if (existing !== undefined) {
         existing.count += 1;
-        return progress;
+        return;
       }
       progress.wrongAnswers.push({ a: question.a, b: question.b, count: 1 });
       if (progress.wrongAnswers.length > MAX_TRACKED_WRONG_ANSWERS) {
         progress.wrongAnswers.shift();
       }
-      return progress;
     }
 
     function recordBestScore(progress, levelId, correctCount) {
@@ -1244,7 +1298,6 @@
       if (correctCount > (progress.levelBestScore[key] || 0)) {
         progress.levelBestScore[key] = correctCount;
       }
-      return progress;
     }
 
     function recordLevelResult(progress, levelId, correctCount, questionCount) {
@@ -1253,7 +1306,7 @@
       if (stars > (progress.levelStars[key] || 0)) {
         progress.levelStars[key] = stars;
       }
-      return recordBestScore(progress, levelId, correctCount);
+      recordBestScore(progress, levelId, correctCount);
     }
 
     const TIMED_CHALLENGE_SECONDS = 60;
@@ -1261,7 +1314,7 @@
     // The timed challenge never earns stars (spec §3.2), so it records only the
     // best score.
     function recordChallengeScore(progress, levelId, correctCount) {
-      return recordBestScore(progress, levelId, correctCount);
+      recordBestScore(progress, levelId, correctCount);
     }
 
     function appendDigit(currentInput, digit) {
@@ -1876,17 +1929,16 @@
       recordChallengeScore(gameState.progress, TIMED_CHALLENGE_LEVEL_ID, gameState.correctCount);
       saveProgress(gameState.progress);
       const bestScore = bestScoreFor(TIMED_CHALLENGE_LEVEL_ID);
-      elementById('result-heading').textContent = CHALLENGE_HEADING;
-      elementById('result-stars').textContent = '';
-      elementById('result-summary').textContent =
-        `${TIMED_CHALLENGE_SECONDS} 秒答对 ${gameState.correctCount} 题 · 最高纪录 ${bestScore} 题`;
-      elementById('result-wrong-review').textContent = buildWrongReviewText();
-      const primary = elementById('result-primary');
-      primary.textContent = RESULT_RETRY_LABEL;
-      primary.onclick = () => startLevel(TIMED_CHALLENGE_LEVEL_ID);
-      elementById('result-replay').hidden = true;
-      elementById('result-back').onclick = goToLevelMap;
-      showScreen(SCREEN_RESULT);
+      showResultScreen({
+        heading: CHALLENGE_HEADING,
+        starsText: '',
+        summaryText:
+          `${TIMED_CHALLENGE_SECONDS} 秒答对 ${gameState.correctCount} 题 · 最高纪录 ${bestScore} 题`,
+        primaryLabel: RESULT_RETRY_LABEL,
+        isReplayVisible: false,
+        onPrimary: () => startLevel(TIMED_CHALLENGE_LEVEL_ID),
+        onReplay: () => startLevel(TIMED_CHALLENGE_LEVEL_ID),
+      });
     }
 
     function renderMuteToggle() {
@@ -1922,8 +1974,7 @@
     const SPARK_RADIUS_PX = 110;
     const COMBO_INTENSITY_PROPERTY = '--combo-step';
 
-    function spawnSparkBurst() {
-      const area = elementById('question-area');
+    function spawnSparkBurstIn(container) {
       const burst = document.createElement('div');
       burst.className = SPARK_BURST_CLASS;
       for (let index = 0; index < SPARK_COUNT; index += 1) {
@@ -1935,8 +1986,21 @@
         spark.style.setProperty('--spark-y', `${Math.sin(angle) * SPARK_RADIUS_PX}px`);
         burst.appendChild(spark);
       }
-      area.appendChild(burst);
+      container.appendChild(burst);
+      // The burst removes itself once the animation ends, so repeated answers
+      // never accumulate spark nodes.
       window.setTimeout(() => burst.remove(), SPARK_LIFETIME_MS);
+    }
+
+    function spawnSparkBurst() {
+      spawnSparkBurstIn(elementById('question-area'));
+    }
+
+    // Spec §7's 过关 celebration. The play-screen burst honours
+    // prefers-reduced-motion through the .spark-burst rule in the media query,
+    // which this reuses by sharing the class.
+    function spawnResultSparkBurst() {
+      spawnSparkBurstIn(elementById('result-stars'));
     }
 
     // Spec §7 requires the feedback to ramp with the streak. The CSS scales
@@ -2002,6 +2066,8 @@
       scheduleNextQuestion(FEEDBACK_DELAY_MS);
     }
 
+    const DEMO_ANSWER_TEMPLATE = '正确答案是 {answer}';
+
     function handleWrongAnswer() {
       playSound(SOUND.WRONG);
       gameState.combo = 0;
@@ -2016,14 +2082,12 @@
       flashQuestion(FEEDBACK_CLASS_WRONG);
       if (isTimedChallenge()) {
         const answer = gameState.currentQuestion.a - gameState.currentQuestion.b;
-        elementById('hint-text').textContent = `正确答案是 ${answer}`;
+        elementById('hint-text').textContent = DEMO_ANSWER_TEMPLATE.replace('{answer}', String(answer));
         scheduleNextQuestion(CHALLENGE_FEEDBACK_DELAY_MS);
         return;
       }
       showDemo(gameState.currentQuestion);
     }
-
-    const DEMO_ANSWER_TEMPLATE = '正确答案是 {answer}';
 
     function showDemo(question) {
       const overlay = elementById('demo-overlay');
@@ -2070,20 +2134,24 @@
     function finishStandardLevel() {
       const levelId = gameState.currentLevelId;
       const total = questionCountFor(levelId);
-      const stars = computeStars(gameState.correctCount, total);
       const isPassed = isLevelPassed(gameState.correctCount, total);
       recordLevelResult(gameState.progress, levelId, gameState.correctCount, total);
       saveProgress(gameState.progress);
       if (isPassed) {
         playSound(SOUND.LEVEL_COMPLETE);
       }
-      renderResult(levelId, stars, isPassed, total);
+      renderResult(levelId, gameState.correctCount, isPassed, total);
+      // Consumed and cleared by renderLevelMap on the way back to the map, so
+      // the planet the child just lit up is the one that animates. Reset to
+      // null on a failed run: otherwise a stale id from an earlier pass would
+      // re-light a planet the child cleared ages ago.
+      gameState.justClearedLevelId = isPassed ? levelId : null;
       if (isPassed) {
-        // Consumed and cleared by renderLevelMap on the way back to the map,
-        // so the planet the child just lit up is the one that animates.
-        gameState.justClearedLevelId = levelId;
+        // Spec §7's 过关 celebration, at the moment of passing: a child who
+        // taps 下一关 never passes through renderLevelMap, so the planet
+        // light-up alone would never be seen.
+        spawnResultSparkBurst();
       }
-      showScreen(SCREEN_RESULT);
     }
 
     function buildWrongReviewText() {
@@ -2096,30 +2164,40 @@
       return `${RESULT_WRONG_REVIEW_PREFIX}${list}`;
     }
 
-    function renderResult(levelId, stars, isPassed, total) {
-      elementById('result-heading').textContent = isPassed ? RESULT_PASS_HEADING : RESULT_FAIL_HEADING;
-      elementById('result-stars').textContent = formatStars(stars);
-      elementById('result-summary').textContent = `答对 ${gameState.correctCount} / ${total} 题`;
+    // The one place the seven result-screen elements are wired. Both the
+    // standard and the timed endings funnel through here so their copy cannot
+    // drift apart the way the inlined `b = 10` expression once did.
+    function showResultScreen(options) {
+      elementById('result-heading').textContent = options.heading;
+      elementById('result-stars').textContent = options.starsText;
+      elementById('result-summary').textContent = options.summaryText;
       elementById('result-wrong-review').textContent = buildWrongReviewText();
-
-      const hasNextLevel = levelId < LEVEL_COUNT;
-      const primaryLabel = isPassed && hasNextLevel ? RESULT_NEXT_LABEL : RESULT_RETRY_LABEL;
       const primary = elementById('result-primary');
-      primary.textContent = primaryLabel;
-      primary.onclick = () => {
-        if (isPassed && hasNextLevel) {
-          startLevel(levelId + 1);
-          return;
-        }
-        startLevel(levelId);
-      };
-
-      // When the primary button already restarts the level, a second restart
-      // button next to it is just noise.
+      primary.textContent = options.primaryLabel;
+      primary.onclick = options.onPrimary;
       const replay = elementById('result-replay');
-      replay.hidden = primaryLabel === RESULT_RETRY_LABEL;
-      replay.onclick = () => startLevel(levelId);
+      replay.textContent = RESULT_RETRY_LABEL;
+      replay.hidden = !options.isReplayVisible;
+      replay.onclick = options.onReplay;
       elementById('result-back').onclick = goToLevelMap;
+      showScreen(SCREEN_RESULT);
+    }
+
+    function renderResult(levelId, correctCount, isPassed, total) {
+      const hasNextLevel = levelId < LEVEL_COUNT;
+      const isNextAvailable = isPassed && hasNextLevel;
+      showResultScreen({
+        heading: isPassed ? RESULT_PASS_HEADING : RESULT_FAIL_HEADING,
+        starsText: formatStars(computeStars(correctCount, total)),
+        summaryText: `答对 ${correctCount} / ${total} 题`,
+        primaryLabel: isNextAvailable ? RESULT_NEXT_LABEL : RESULT_RETRY_LABEL,
+        // When the primary button already restarts the level (a failed run, or
+        // a pass on the last level), a second restart button next to it is
+        // just noise.
+        isReplayVisible: isNextAvailable,
+        onPrimary: () => startLevel(isNextAvailable ? levelId + 1 : levelId),
+        onReplay: () => startLevel(levelId),
+      });
     }
 
     const DIGIT_KEY_PATTERN = /^[0-9]$/;

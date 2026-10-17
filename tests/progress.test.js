@@ -30,6 +30,16 @@ test('passing the level means earning at least one star', () => {
   assert.equal(logic.isLevelPassed(7, 10), false);
 });
 
+// The 80% pass line is not the same as Math.floor(questionCount * 0.8): at
+// twelve questions that mutant would pass a 75% run (9/12), unlocking the next
+// level. Pin each length just below the line, plus the 90% two-star boundary.
+test('the pass line is not rounded down at any level length', () => {
+  assert.equal(logic.computeStars(9, 12), 0);
+  assert.equal(logic.computeStars(10, 15), 0);
+  // 9/10 is exactly 90%, which earns two stars, not zero.
+  assert.equal(logic.computeStars(9, 10), 2);
+});
+
 test('only level 1 is unlocked on a fresh profile', () => {
   const progress = logic.createInitialProgress();
   assert.equal(logic.isLevelUnlocked(progress, 1), true);
@@ -168,7 +178,7 @@ test('a profile built through recordLevelResult parses back unchanged', () => {
   const progress = logic.createInitialProgress();
   logic.recordLevelResult(progress, 1, 10, 10);
   logic.recordLevelResult(progress, 2, 8, 10);
-  logic.recordLevelResult(progress, 10, 7, 7);
+  logic.recordLevelResult(progress, 9, 15, 15);
   const parsed = logic.parseProgress(logic.serializeProgress(progress));
   assert.deepEqual(hostRealm(parsed), hostRealm(progress));
 });
