@@ -2901,8 +2901,12 @@ git commit -m "feat: 限时挑战关"
       clearChallengeClock();
       isFeedbackPending = false;
       gameState.selectedLevelId = firstPlayableLevelId();
-      renderLevelMap();
+      // showScreen must come BEFORE renderLevelMap: the map is display:none
+      // until then, and scrollIntoView silently does nothing inside a hidden
+      // subtree — which would leave the star map showing nodes 1-6 while the
+      // detail card describes level 10.
       showScreen(SCREEN_MAP);
+      renderLevelMap();
     }
 ```
 
