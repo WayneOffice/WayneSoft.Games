@@ -1085,9 +1085,15 @@ Expected: FAIL —— `logic.computeStars is not a function`
         // Without this the pool saturates with mastered material and level
         // 9/10 permanently spends 30% of every run on questions from week one,
         // crowding out whatever is actually still hard.
-        progress.wrongAnswers = progress.wrongAnswers.filter(
-          (entry) => questionKey(entry) !== key,
-        );
+        // Remove IN PLACE, not with a reassignment: startLevel hands this
+        // array to createQuestionStream once and the stream closes over it for
+        // the whole level, so swapping the reference would leave the stream
+        // drawing from a stale snapshot. The in-place form also matches the
+        // push/shift/count-increment mutations below.
+        const index = progress.wrongAnswers.findIndex((entry) => questionKey(entry) === key);
+        if (index >= 0) {
+          progress.wrongAnswers.splice(index, 1);
+        }
         return progress;
       }
       const existing = progress.wrongAnswers.find((entry) => questionKey(entry) === key);
