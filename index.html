@@ -912,6 +912,110 @@
       gameState.strongHintTimerId = window.setTimeout(showStrongHint, STRONG_HINT_DELAY_MS);
     }
 
+    const SOUND = {
+      CORRECT: 'correct',
+      WRONG: 'wrong',
+      COMBO: 'combo',
+      LEVEL_COMPLETE: 'levelComplete',
+    };
+
+    const SOUND_GAIN = 0.15;
+    const SOUND_DURATION_SECONDS = 0.15;
+    const SILENT_GAIN = 0.0001;
+    const CORRECT_FREQUENCY_HZ = 523.25;
+    const CORRECT_SECOND_FREQUENCY_HZ = 659.25;
+    const WRONG_FREQUENCY_HZ = 155.56;
+    const COMBO_BASE_FREQUENCY_HZ = 523.25;
+    const COMBO_FREQUENCY_STEP_HZ = 55;
+    const MAX_COMBO_PITCH_STEPS = 6;
+    const COMPLETE_MELODY_HZ = [523.25, 659.25, 783.99];
+
+    let audioContext = null;
+
+    function ensureAudioContext() {
+      if (audioContext === null) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (typeof AudioContextClass !== 'function') {
+          return null;
+        }
+        audioContext = new AudioContextClass();
+      }
+      if (audioContext.state === 'suspended') {
+        audioContext.resume().catch((error) => {
+          console.error('Failed to resume the audio context.', error);
+        });
+      }
+      return audioContext;
+    }
+
+    function playTone(frequencyHz, startDelaySeconds) {
+      const context = ensureAudioContext();
+      if (context === null || gameState.progress.isMuted) {
+        return;
+      }
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const startAt = context.currentTime + startDelaySeconds;
+      const endAt = startAt + SOUND_DURATION_SECONDS;
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(frequencyHz, startAt);
+      gain.gain.setValueAtTime(SOUND_GAIN, startAt);
+      gain.gain.exponentialRampToValueAtTime(SILENT_GAIN, endAt);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(startAt);
+      oscillator.stop(endAt);
+    }
+
+    function comboFrequency() {
+      const steps = Math.min(gameState.combo, MAX_COMBO_PITCH_STEPS);
+      return COMBO_BASE_FREQUENCY_HZ + steps * COMBO_FREQUENCY_STEP_HZ;
+    }
+
+    function playMelody(frequenciesHz) {
+      frequenciesHz.forEach((frequencyHz, index) => {
+        playTone(frequencyHz, index * SOUND_DURATION_SECONDS);
+      });
+    }
+
+    function playSound(soundName) {
+      switch (soundName) {
+        case SOUND.CORRECT:
+          playMelody([CORRECT_FREQUENCY_HZ, CORRECT_SECOND_FREQUENCY_HZ]);
+          break;
+        case SOUND.WRONG:
+          playTone(WRONG_FREQUENCY_HZ, 0);
+          break;
+        case SOUND.COMBO:
+          playTone(comboFrequency(), 0);
+          break;
+        case SOUND.LEVEL_COMPLETE:
+          playMelody(COMPLETE_MELODY_HZ);
+          break;
+        default:
+          throw new Error(`Unknown sound: ${soundName}`);
+      }
+    }
+
+    function renderMuteToggle() {
+      const toggle = elementById('mute-toggle');
+      toggle.textContent = gameState.progress.isMuted ? MUTE_ICON_OFF : MUTE_ICON_ON;
+    }
+
+    function toggleMute() {
+      gameState.progress.isMuted = !gameState.progress.isMuted;
+      renderMuteToggle();
+      saveProgress(gameState.progress);
+    }
+
+    // Browsers keep a freshly created AudioContext suspended until a user
+    // gesture happens, so the first tap or key press has to resume it.
+    function primeAudioContext() {
+      ensureAudioContext();
+      document.removeEventListener('pointerdown', primeAudioContext);
+      document.removeEventListener('keydown', primeAudioContext);
+    }
+
     function flashQuestion(feedbackClass) {
       const questionText = elementById('question-text');
       questionText.classList.remove(FEEDBACK_CLASS_CORRECT, FEEDBACK_CLASS_WRONG);
@@ -956,6 +1060,7 @@
     }
 
     function handleCorrectAnswer() {
+      playSound(SOUND.CORRECT);
       gameState.combo += 1;
       if (!gameState.isRetrying) {
         gameState.correctCount += 1;
@@ -964,12 +1069,16 @@
         saveProgress(gameState.progress);
       }
       renderCombo();
+      if (gameState.combo >= COMBO_VISIBLE_FROM) {
+        playSound(SOUND.COMBO);
+      }
       flashQuestion(FEEDBACK_CLASS_CORRECT);
       isFeedbackPending = true;
       scheduleNextQuestion(FEEDBACK_DELAY_MS);
     }
 
     function handleWrongAnswer() {
+      playSound(SOUND.WRONG);
       gameState.combo = 0;
       renderCombo();
       if (!gameState.isRetrying) {
@@ -1018,6 +1127,9 @@
       const isPassed = isLevelPassed(gameState.correctCount, total);
       recordLevelResult(gameState.progress, levelId, gameState.correctCount, total);
       saveProgress(gameState.progress);
+      if (isPassed) {
+        playSound(SOUND.LEVEL_COMPLETE);
+      }
       renderResult(levelId, stars, isPassed, total);
       showScreen(SCREEN_RESULT);
     }
@@ -1094,7 +1206,8 @@
 
     function initGame() {
       gameState.progress = loadProgress();
-      elementById('mute-toggle').textContent = MUTE_ICON_ON;
+      renderMuteToggle();
+      elementById('mute-toggle').addEventListener('click', toggleMute);
       elementById('back-to-map').addEventListener('click', goToLevelMap);
       elementById('demo-continue').addEventListener('click', hideDemo);
       elementById('demo-overlay').addEventListener('click', (event) => {
@@ -1102,6 +1215,8 @@
           hideDemo();
         }
       });
+      document.addEventListener('pointerdown', primeAudioContext);
+      document.addEventListener('keydown', primeAudioContext);
       document.addEventListener('keydown', handlePhysicalKey);
       goToLevelMap();
     }
