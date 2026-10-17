@@ -12,6 +12,7 @@ const LOGIC_SCRIPT_PATTERN = /<script id="game-logic">([\s\S]*?)<\/script>/;
 // keeps working while the game is built up task by task.
 const EXPORTED_NAMES = [
   'MAX_ANSWER_DIGITS',
+  'MAX_STARS',
   'LEVEL_COUNT',
   'MIXED_LEVEL_ID',
   'TIMED_CHALLENGE_LEVEL_ID',

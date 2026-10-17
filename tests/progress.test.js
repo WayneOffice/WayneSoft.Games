@@ -113,6 +113,30 @@ test('a missing or invalid count falls back to one', () => {
   assert.deepEqual(hostRealm(parsed.wrongAnswers), [{ a: 42, b: 7, count: 1 }]);
 });
 
+test('an out of range star count is dropped instead of breaking the render', () => {
+  const parsed = logic.parseProgress('{"levelStars":{"1":99}}');
+  assert.deepEqual(hostRealm(parsed.levelStars), {});
+});
+
+test('only in range integer star counts survive parsing', () => {
+  const parsed = logic.parseProgress('{"levelStars":{"1":3,"2":0,"3":"3"}}');
+  assert.deepEqual(hostRealm(parsed.levelStars), { '1': 3 });
+});
+
+test('only positive integer best scores survive parsing', () => {
+  const parsed = logic.parseProgress('{"levelBestScore":{"1":-4,"2":7,"3":"x"}}');
+  assert.deepEqual(hostRealm(parsed.levelBestScore), { '2': 7 });
+});
+
+test('a profile built through recordLevelResult parses back unchanged', () => {
+  const progress = logic.createInitialProgress();
+  logic.recordLevelResult(progress, 1, 10, 10);
+  logic.recordLevelResult(progress, 2, 8, 10);
+  logic.recordLevelResult(progress, 10, 7, 7);
+  const parsed = logic.parseProgress(logic.serializeProgress(progress));
+  assert.deepEqual(hostRealm(parsed), hostRealm(progress));
+});
+
 test('a leading zero is dropped because the answer is never zero', () => {
   assert.equal(logic.appendDigit('', 0), '');
   assert.equal(logic.appendDigit('', 7), '7');

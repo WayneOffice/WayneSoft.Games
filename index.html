@@ -407,6 +407,10 @@
     const PERCENT_SCALE = 100;
     const PASS_ACCURACY_PERCENT = 80;
     const TWO_STAR_ACCURACY_PERCENT = 90;
+    const MAX_STARS = 3;
+    // Stars are only ever recorded for a passed level, so a stored zero is
+    // meaningless; anything below one is corrupt data.
+    const MIN_EARNED_STARS = 1;
     const MAX_TRACKED_WRONG_ANSWERS = 50;
     const PROGRESS_STORAGE_KEY = 'waynesoft.math.subtraction-game.progress.v1';
 
@@ -415,7 +419,7 @@
         return 0;
       }
       if (correctCount >= questionCount) {
-        return 3;
+        return MAX_STARS;
       }
       if (correctCount * PERCENT_SCALE >= questionCount * TWO_STAR_ACCURACY_PERCENT) {
         return 2;
@@ -466,6 +470,41 @@
       }));
     }
 
+    // A hand-edited or half-written save can hold a star count outside
+    // MIN_EARNED_STARS..MAX_STARS. Such a value both breaks star rendering
+    // (repeat() with a negative count throws a RangeError) and silently freezes
+    // star recording for that level, so drop the entry: a dropped level simply
+    // reads as zero stars, which is the safe default.
+    function isValidLevelStars(starCount) {
+      return Number.isInteger(starCount)
+        && starCount >= MIN_EARNED_STARS
+        && starCount <= MAX_STARS;
+    }
+
+    function sanitizeLevelStars(value) {
+      if (!isPlainObject(value)) {
+        return {};
+      }
+      return Object.fromEntries(
+        Object.entries(value).filter(([, starCount]) => isValidLevelStars(starCount)),
+      );
+    }
+
+    // The best score is the most questions ever answered correctly in a run, so
+    // a stored value below one is corrupt data.
+    function isValidBestScore(bestScore) {
+      return Number.isInteger(bestScore) && bestScore > 0;
+    }
+
+    function sanitizeLevelBestScore(value) {
+      if (!isPlainObject(value)) {
+        return {};
+      }
+      return Object.fromEntries(
+        Object.entries(value).filter(([, bestScore]) => isValidBestScore(bestScore)),
+      );
+    }
+
     function parseProgress(rawValue) {
       if (typeof rawValue !== 'string') {
         return createInitialProgress();
@@ -476,8 +515,8 @@
           return createInitialProgress();
         }
         return {
-          levelStars: isPlainObject(parsed.levelStars) ? parsed.levelStars : {},
-          levelBestScore: isPlainObject(parsed.levelBestScore) ? parsed.levelBestScore : {},
+          levelStars: sanitizeLevelStars(parsed.levelStars),
+          levelBestScore: sanitizeLevelBestScore(parsed.levelBestScore),
           wrongAnswers: parseWrongAnswers(parsed.wrongAnswers),
           isMuted: parsed.isMuted === true,
         };
@@ -555,7 +594,6 @@
     const SCREEN_PLAY = 'play';
     const SCREEN_RESULT = 'result';
 
-    const MAX_STARS = 3;
     const STAR_FILLED = '⭐';
     const STAR_EMPTY = '☆';
     const LEVEL_LOCK_ICON = '🔒';
