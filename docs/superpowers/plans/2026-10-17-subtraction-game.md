@@ -3810,7 +3810,13 @@ Expected: PASS（55/55，本任务不碰 game-logic）
 
 按 `~/.claude/CLAUDE.md` 的「代码修改收尾」一节，顺序是**实现完成 → 收尾 → 跑测试 → 提交**。所以在提交之前跑一次 `/simplify`（本次 diff 含 `.cs` 之外的源代码改动，`reviewing-dotnet-idioms` 不适用 —— 这不是 .NET 项目）。
 
-CSS 密集的 Task 10–12 正是重复容易堆积的地方，这一步不能跳。
+**范围是整个分支，不是本任务这一小步。** 前面的任务是在「不得派生子代理」的契约下实现的，所以它们都跳过了各自的收尾；这里一次性覆盖全部：
+
+```bash
+git diff $(git merge-base 32ff0e6 HEAD)..HEAD -- index.html tests/
+```
+
+把这整段 diff 交给 `/simplify`。CSS 密集的 Task 10–12 正是重复容易堆积的地方，这一步不能跳。
 
 - [ ] **Step 6: 跑测试并提交**
 
