@@ -11,7 +11,7 @@ const LEVEL_RULES = {
   1: ({ a, b }) => a >= 11 && a <= 99 && b >= 1 && b <= 9 && a % 10 >= b,
   2: ({ a, b }) => a >= 21 && a <= 99 && b >= 10 && b <= 90 && b % 10 === 0 && b < a,
   3: ({ a, b }) => a >= 21 && a <= 99 && b >= 11 && b < a && a % 10 >= b % 10,
-  4: ({ a, b }) => a >= 11 && a <= 19 && b >= 2 && b <= 9 && a % 10 < b,
+  4: ({ a, b }) => a >= 11 && a <= 19 && b >= logic.MIN_TEEN_SUBTRAHEND && b <= 9 && a % 10 < b,
   5: ({ a, b }) => a >= 21 && a <= 99 && a % 10 !== 0 && b >= 1 && b <= 9 && a % 10 < b,
   6: ({ a, b }) => a >= 20 && a <= 90 && a % 10 === 0 && b >= 1 && b <= 9,
   7: ({ a, b }) => a >= 21 && a <= 99 && a % 10 !== 0 && b >= 11 && b < a && a % 10 < b % 10,
@@ -85,6 +85,32 @@ test('mixed levels draw from every level type over many draws', () => {
     }
   }
   assert.equal(touchedLevels.size, 8, `expected all 8 level types, saw ${[...touchedLevels].join(',')}`);
+});
+
+test('mixed levels draw each level type with roughly equal probability', () => {
+  // The spec requires the eight level types to be equally likely. Sampling
+  // uniformly over the union of pair sets would instead weight each type by
+  // its pair count, and level 4 (36 pairs out of 5184) would show up about
+  // 0.7% of the time, so the child would effectively never practise it.
+  const stream = logic.createQuestionStream(logic.MIXED_LEVEL_ID, logic.createRandom(12345), []);
+  const drawCount = 8000;
+  const typeCounts = new Map();
+  for (let i = 0; i < drawCount; i += 1) {
+    const question = stream.next();
+    for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      if (LEVEL_RULES[levelId](question)) {
+        typeCounts.set(levelId, (typeCounts.get(levelId) ?? 0) + 1);
+        break;
+      }
+    }
+  }
+  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    const share = (typeCounts.get(levelId) ?? 0) / drawCount;
+    assert.ok(
+      share >= 0.05 && share <= 0.2,
+      `level ${levelId} drawn ${(share * 100).toFixed(1)}% of the time, expected between 5% and 20%`,
+    );
+  }
 });
 
 test('mixed levels never repeat a question within one run', () => {

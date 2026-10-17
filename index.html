@@ -53,6 +53,7 @@
     const MAX_ONES_DIGIT = 9;
     const ONES_PER_TEN = 10;
     const MAX_TEEN_MINUEND = 19;
+    const MIN_TEEN_SUBTRAHEND = 2;
     const MIN_MINUEND_FOR_ROUND_TEN_SUBTRAHEND = 21;
     const MIN_ROUND_TEN_MINUEND = 20;
     const MAX_ROUND_TEN_MINUEND = 90;
@@ -136,7 +137,7 @@
 
     function collectLevel4Pairs(pairs) {
       for (let a = MIN_TWO_DIGIT_NUMBER; a <= MAX_TEEN_MINUEND; a += 1) {
-        for (let b = 2; b <= MAX_ONES_DIGIT; b += 1) {
+        for (let b = MIN_TEEN_SUBTRAHEND; b <= MAX_ONES_DIGIT; b += 1) {
           if (onesDigit(a) < b) {
             pairs.push({ a, b });
           }
