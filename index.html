@@ -539,10 +539,17 @@
 
     function mergeAnswerIntoProgress(progress, question, isCorrect) {
       const key = questionKey(question);
+      // A mastered question leaves the pool (spec §4.2). Otherwise the pool only
+      // ever grows, and the FIFO cap below then evicts the *recent* genuine
+      // struggles first, leaving level 9/10 drawing a third of its questions
+      // from material the child mastered long ago. Removed in place so the
+      // question stream's view of the pool stays current for the rest of the
+      // level rather than freezing at the snapshot taken when the level began.
       if (isCorrect) {
-        progress.wrongAnswers = progress.wrongAnswers.filter(
-          (entry) => questionKey(entry) !== key,
-        );
+        const index = progress.wrongAnswers.findIndex((entry) => questionKey(entry) === key);
+        if (index >= 0) {
+          progress.wrongAnswers.splice(index, 1);
+        }
         return progress;
       }
       const existing = progress.wrongAnswers.find((entry) => questionKey(entry) === key);

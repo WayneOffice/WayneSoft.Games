@@ -92,6 +92,20 @@ test('a correct answer on a question that was never wrong is a no-op', () => {
   assert.deepEqual(hostRealm(progress.wrongAnswers), [{ a: 42, b: 7, count: 1 }]);
 });
 
+// The pool array is handed to the question stream once, at level start, and the
+// stream closes over that reference for the whole level. Removing a mastered
+// question must therefore mutate the array in place; reassigning it (as
+// Array.prototype.filter would) would leave the stream reading a stale snapshot.
+test('removing a mastered question keeps the pool array identity', () => {
+  const progress = logic.createInitialProgress();
+  logic.mergeAnswerIntoProgress(progress, { a: 42, b: 7 }, false);
+  logic.mergeAnswerIntoProgress(progress, { a: 53, b: 8 }, false);
+  const pool = progress.wrongAnswers;
+  logic.mergeAnswerIntoProgress(progress, { a: 42, b: 7 }, true);
+  assert.equal(progress.wrongAnswers, pool);
+  assert.equal(pool.length, 1);
+});
+
 test('the tracked wrong answers list is capped', () => {
   const progress = logic.createInitialProgress();
   for (let i = 0; i < logic.MAX_TRACKED_WRONG_ANSWERS + 10; i += 1) {
