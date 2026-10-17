@@ -3256,8 +3256,9 @@ git commit -m "feat: 太空主题设计令牌与星图关卡地图"
 **Interfaces:**
 - Consumes: Task 10 的全部设计令牌；`gameState`、`elementById`、`FLASH_*`、`COMBO_VISIBLE_FROM`
 - Produces:
-  - `spawnSparkBurst(): void`、`renderLevelCompleteGlow(): void`
+  - `spawnSparkBurst(): void`、`spawnResultSparkBurst(): void`
   - 常量：`SPARK_BURST_CLASS`、`SPARK_COUNT`、`SPARK_LIFETIME_MS`
+  - 注：这里原先列出的 `renderLevelCompleteGlow(): void` 有意不存在——过关的星球点亮属于 Task 10 的 `.star-node.is-just-cleared` / `@keyframes planet-light-up`，不在答题卡片上；结算界面的星光庆祝是 `spawnResultSparkBurst()`（2026-10-18 补做）。
 
 **视觉要求（spec §7）：** 答对时星光从题目处炸开；答错红色抖动；连击反馈强度递增；过关时星球点亮 + 星尘庆祝。全部用 emoji + CSS，不引外部资源。`prefers-reduced-motion` 开启时关闭位移与缩放类动画。
 
