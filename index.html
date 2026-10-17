@@ -713,7 +713,7 @@
 
     <div id="demo-overlay" class="demo-overlay" hidden>
       <div class="demo-card">
-        <p class="demo-title">这样算：</p>
+        <p id="demo-title" class="demo-title"></p>
         <ol id="demo-steps" class="demo-steps"></ol>
         <button id="demo-continue" type="button" class="primary-button">继续</button>
       </div>
@@ -2023,9 +2023,19 @@
       showDemo(gameState.currentQuestion);
     }
 
+    const DEMO_ANSWER_TEMPLATE = '正确答案是 {answer}';
+
     function showDemo(question) {
       const overlay = elementById('demo-overlay');
       const list = elementById('demo-steps');
+      // Spec §5.1 requires the correct answer to be shown, and §5.3 lets the
+      // child dismiss the overlay by tapping outside it. Putting the answer
+      // only in the last step means a child who swipes the overlay away never
+      // sees it, so it gets its own line at the top of the card.
+      elementById('demo-title').textContent = DEMO_ANSWER_TEMPLATE.replace(
+        '{answer}',
+        String(question.a - question.b),
+      );
       list.replaceChildren();
       for (const step of buildDemoSteps(question.a, question.b).steps) {
         const item = document.createElement('li');
