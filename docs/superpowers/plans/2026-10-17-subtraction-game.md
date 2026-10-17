@@ -3272,6 +3272,11 @@ git commit -m "feat: 太空主题设计令牌与星图关卡地图"
         align-items: center;
         gap: 12px;
         flex-wrap: wrap;
+        /* #mute-toggle is position: fixed at the viewport's top-right. On any
+           viewport narrower than .screen's max-width the two overlap, and the
+           opaque button covers the combo readout — including the ×N number.
+           Reserve the button's width plus its inset so they cannot collide. */
+        padding-right: calc(var(--touch-target) + 20px);
       }
 
       .play-title {
@@ -3648,6 +3653,12 @@ git commit -m "feat: 太空主题设计令牌与星图关卡地图"
           animation: none;
         }
 
+        /* Programmatic scrolling is movement too. Without this the map still
+           glides to the selected node when the child returns to it. */
+        .star-map-scroll {
+          scroll-behavior: auto;
+        }
+
         .spark-burst {
           display: none;
         }
@@ -3790,6 +3801,8 @@ Run: 双击 `index.html`（Chrome 或 Edge）。
 - [ ] 用 DevTools 量一下可点区域：静音按钮与星图节点**都 ≥ 64px**（spec §7 的硬性要求，不能只在桌面宽度上满足）。
 - [ ] 把窗口拉窄到手机宽度，布局不溢出、按钮仍可点，且**尺寸没有缩到 64px 以下**。
 - [ ] 连击指示器在 ×3 与 ×8 时大小/光晕明显不同。
+- [ ] **把窗口缩到约 800px 宽**，连到 ×3，确认「×N」完整可见、**没有被右上角固定的静音按钮盖住**（用 DevTools 量两者矩形，不得相交）。
+- [ ] 打开「减少动态效果」后返回星图，选中的星球**直接跳到位**而不是平滑滑动。
 
 - [ ] **Step 3: 在安卓平板上跑一遍分发验收（spec §9.2）**
 
