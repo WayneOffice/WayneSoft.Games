@@ -953,8 +953,62 @@
       presentNextQuestion();
     }
 
+    const RESULT_PASS_HEADING = '过关啦！';
+    const RESULT_FAIL_HEADING = '再试一次吧';
+    const RESULT_NEXT_LABEL = '下一关';
+    const RESULT_RETRY_LABEL = '再来一次';
+    const RESULT_WRONG_REVIEW_PREFIX = '错题回顾：';
+    const RESULT_NO_WRONG_REVIEW = '这一关全对，没有错题！';
+
     function finishLevel() {
-      // Implemented in Task 6.
+      finishStandardLevel();
+    }
+
+    function finishStandardLevel() {
+      const levelId = gameState.currentLevelId;
+      const total = questionCountFor(levelId);
+      const stars = computeStars(gameState.correctCount, total);
+      const isPassed = isLevelPassed(gameState.correctCount, total);
+      recordLevelResult(gameState.progress, levelId, gameState.correctCount, total);
+      saveProgress(gameState.progress);
+      renderResult(levelId, stars, isPassed, total);
+      showScreen(SCREEN_RESULT);
+    }
+
+    function buildWrongReviewText() {
+      if (gameState.wrongQuestions.length === 0) {
+        return RESULT_NO_WRONG_REVIEW;
+      }
+      const list = gameState.wrongQuestions
+        .map((question) => `${question.a} − ${question.b}`)
+        .join('、');
+      return `${RESULT_WRONG_REVIEW_PREFIX}${list}`;
+    }
+
+    function renderResult(levelId, stars, isPassed, total) {
+      elementById('result-heading').textContent = isPassed ? RESULT_PASS_HEADING : RESULT_FAIL_HEADING;
+      elementById('result-stars').textContent = formatStars(stars);
+      elementById('result-summary').textContent = `答对 ${gameState.correctCount} / ${total} 题`;
+      elementById('result-wrong-review').textContent = buildWrongReviewText();
+
+      const hasNextLevel = levelId < LEVEL_COUNT;
+      const primaryLabel = isPassed && hasNextLevel ? RESULT_NEXT_LABEL : RESULT_RETRY_LABEL;
+      const primary = elementById('result-primary');
+      primary.textContent = primaryLabel;
+      primary.onclick = () => {
+        if (isPassed && hasNextLevel) {
+          startLevel(levelId + 1);
+          return;
+        }
+        startLevel(levelId);
+      };
+
+      // When the primary button already restarts the level, a second restart
+      // button next to it is just noise.
+      const replay = elementById('result-replay');
+      replay.hidden = primaryLabel === RESULT_RETRY_LABEL;
+      replay.onclick = () => startLevel(levelId);
+      elementById('result-back').onclick = goToLevelMap;
     }
 
     const DIGIT_KEY_PATTERN = /^[0-9]$/;
