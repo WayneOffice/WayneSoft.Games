@@ -38,6 +38,7 @@ const EXPORTED_NAMES = [
   'serializeProgress',
   'mergeAnswerIntoProgress',
   'recordLevelResult',
+  'recordChallengeScore',
   'appendDigit',
   'removeLastDigit',
   'canSubmitAnswer',

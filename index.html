@@ -576,6 +576,16 @@
       return progress;
     }
 
+    const TIMED_CHALLENGE_SECONDS = 60;
+
+    function recordChallengeScore(progress, levelId, correctCount) {
+      const key = String(levelId);
+      if (correctCount > (progress.levelBestScore[key] || 0)) {
+        progress.levelBestScore[key] = correctCount;
+      }
+      return progress;
+    }
+
     function appendDigit(currentInput, digit) {
       if (currentInput.length >= MAX_ANSWER_DIGITS) {
         return currentInput;
@@ -624,6 +634,8 @@
       isRetrying: false,
       weakHintTimerId: null,
       strongHintTimerId: null,
+      challengeRemainingSeconds: 0,
+      challengeTimerId: null,
     };
 
     function elementById(id) {
@@ -706,6 +718,7 @@
 
     function goToLevelMap() {
       clearFeedbackTimeout();
+      clearChallengeClock();
       isFeedbackPending = false;
       renderLevelMap();
       showScreen(SCREEN_MAP);
@@ -742,6 +755,10 @@
       renderCombo();
       elementById('level-title').textContent = LEVEL_TITLES[levelId];
       elementById('challenge-clock').hidden = true;
+      clearChallengeClock();
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        startChallengeClock();
+      }
       showScreen(SCREEN_PLAY);
       presentNextQuestion();
     }
@@ -755,7 +772,7 @@
         }
         gameState.currentQuestion = gameState.retryQueue.shift();
       } else {
-        if (gameState.answeredCount >= questionCountFor(gameState.currentLevelId)) {
+        if (!isTimedChallenge() && gameState.answeredCount >= questionCountFor(gameState.currentLevelId)) {
           beginRetryRound();
           return;
         }
@@ -768,7 +785,7 @@
     }
 
     function beginRetryRound() {
-      if (gameState.wrongQuestions.length === 0) {
+      if (isTimedChallenge() || gameState.wrongQuestions.length === 0) {
         finishLevel();
         return;
       }
@@ -809,7 +826,9 @@
       elementById('question-text').classList.remove(FEEDBACK_CLASS_CORRECT, FEEDBACK_CLASS_WRONG);
       elementById('question-area').classList.remove(WEAK_HINT_CLASS, STRONG_HINT_CLASS);
       elementById('hint-text').textContent = '';
-      if (gameState.isRetrying) {
+      if (isTimedChallenge()) {
+        elementById('question-counter').textContent = `已答对 ${gameState.correctCount} 题`;
+      } else if (gameState.isRetrying) {
         elementById('question-counter').textContent = '错题重练';
       } else {
         const total = questionCountFor(gameState.currentLevelId);
@@ -860,6 +879,9 @@
       keypad.appendChild(buildKeypadButton('⌫', 'keypad-backspace', handleBackspace));
       confirmButton = buildKeypadButton('确定', 'keypad-confirm', submitAnswer);
       keypad.appendChild(confirmButton);
+      if (isTimedChallenge()) {
+        keypad.appendChild(buildKeypadButton(CHALLENGE_SKIP_LABEL, 'keypad-skip', skipQuestion));
+      }
       renderAnswerDisplay();
     }
 
@@ -997,6 +1019,65 @@
       }
     }
 
+    const CHALLENGE_TICK_MS = 1000;
+    const CHALLENGE_FEEDBACK_DELAY_MS = 700;
+    const CHALLENGE_HEADING = '挑战结束';
+    const CHALLENGE_SKIP_LABEL = '跳过';
+
+    function isTimedChallenge() {
+      return gameState.currentLevelId === TIMED_CHALLENGE_LEVEL_ID;
+    }
+
+    function renderChallengeClock() {
+      elementById('challenge-clock').textContent = `⏱ ${gameState.challengeRemainingSeconds} 秒`;
+    }
+
+    function clearChallengeClock() {
+      if (gameState.challengeTimerId !== null) {
+        window.clearInterval(gameState.challengeTimerId);
+        gameState.challengeTimerId = null;
+      }
+    }
+
+    function tickChallengeClock() {
+      gameState.challengeRemainingSeconds -= 1;
+      renderChallengeClock();
+      if (gameState.challengeRemainingSeconds <= 0) {
+        clearChallengeClock();
+        finishLevel();
+      }
+    }
+
+    function startChallengeClock() {
+      clearChallengeClock();
+      gameState.challengeRemainingSeconds = TIMED_CHALLENGE_SECONDS;
+      elementById('challenge-clock').hidden = false;
+      renderChallengeClock();
+      gameState.challengeTimerId = window.setInterval(tickChallengeClock, CHALLENGE_TICK_MS);
+    }
+
+    function skipQuestion() {
+      clearHintTimers();
+      presentNextQuestion();
+    }
+
+    function finishTimedChallenge() {
+      recordChallengeScore(gameState.progress, TIMED_CHALLENGE_LEVEL_ID, gameState.correctCount);
+      saveProgress(gameState.progress);
+      const bestScore = gameState.progress.levelBestScore[String(TIMED_CHALLENGE_LEVEL_ID)] || 0;
+      elementById('result-heading').textContent = CHALLENGE_HEADING;
+      elementById('result-stars').textContent = '';
+      elementById('result-summary').textContent =
+        `${TIMED_CHALLENGE_SECONDS} 秒答对 ${gameState.correctCount} 题 · 最高纪录 ${bestScore} 题`;
+      elementById('result-wrong-review').textContent = buildWrongReviewText();
+      const primary = elementById('result-primary');
+      primary.textContent = RESULT_RETRY_LABEL;
+      primary.onclick = () => startLevel(TIMED_CHALLENGE_LEVEL_ID);
+      elementById('result-replay').hidden = true;
+      elementById('result-back').onclick = goToLevelMap;
+      showScreen(SCREEN_RESULT);
+    }
+
     function renderMuteToggle() {
       const toggle = elementById('mute-toggle');
       toggle.textContent = gameState.progress.isMuted ? MUTE_ICON_OFF : MUTE_ICON_ON;
@@ -1089,6 +1170,12 @@
       }
       isFeedbackPending = true;
       flashQuestion(FEEDBACK_CLASS_WRONG);
+      if (isTimedChallenge()) {
+        const answer = gameState.currentQuestion.a - gameState.currentQuestion.b;
+        elementById('hint-text').textContent = `正确答案是 ${answer}`;
+        scheduleNextQuestion(CHALLENGE_FEEDBACK_DELAY_MS);
+        return;
+      }
       showDemo(gameState.currentQuestion);
     }
 
@@ -1117,6 +1204,12 @@
     const RESULT_NO_WRONG_REVIEW = '这一关全对，没有错题！';
 
     function finishLevel() {
+      clearHintTimers();
+      clearFeedbackTimeout();
+      if (isTimedChallenge()) {
+        finishTimedChallenge();
+        return;
+      }
       finishStandardLevel();
     }
 

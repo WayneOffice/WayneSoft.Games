@@ -194,3 +194,15 @@ test('an empty answer cannot be submitted', () => {
   assert.equal(logic.canSubmitAnswer(''), false);
   assert.equal(logic.canSubmitAnswer('4'), true);
 });
+
+test('the timed challenge records a best score without awarding stars', () => {
+  const progress = logic.createInitialProgress();
+  logic.recordChallengeScore(progress, logic.TIMED_CHALLENGE_LEVEL_ID, 12);
+  logic.recordChallengeScore(progress, logic.TIMED_CHALLENGE_LEVEL_ID, 9);
+  assert.equal(progress.levelBestScore['10'], 12);
+  assert.equal(progress.levelStars['10'], undefined);
+});
+
+test('the timed challenge lasts sixty seconds', () => {
+  assert.equal(logic.TIMED_CHALLENGE_SECONDS, 60);
+});
