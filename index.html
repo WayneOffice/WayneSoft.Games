@@ -9,7 +9,52 @@
   </style>
 </head>
 <body>
-  <main id="app"></main>
+  <button id="mute-toggle" type="button" class="mute-toggle" aria-label="音效开关">🔊</button>
+
+  <main id="screen-map" class="screen">
+    <h1 class="screen-title">100 以内减法闯关</h1>
+    <p class="screen-subtitle">点一关开始练习</p>
+    <ul id="level-map" class="level-map"></ul>
+  </main>
+
+  <main id="screen-play" class="screen" hidden>
+    <header class="play-header">
+      <button id="back-to-map" type="button" class="ghost-button">← 返回</button>
+      <span id="level-title" class="play-title"></span>
+      <span id="question-counter" class="play-counter"></span>
+      <span id="challenge-clock" class="challenge-clock" hidden></span>
+      <span id="combo-indicator" class="combo-indicator"></span>
+    </header>
+
+    <section id="question-area" class="question-area">
+      <p id="question-text" class="question-text"></p>
+      <p id="answer-display" class="answer-display"></p>
+    </section>
+
+    <p id="hint-text" class="hint-text"></p>
+
+    <section id="keypad" class="keypad"></section>
+
+    <div id="demo-overlay" class="demo-overlay" hidden>
+      <div class="demo-card">
+        <p class="demo-title">这样算：</p>
+        <ol id="demo-steps" class="demo-steps"></ol>
+        <button id="demo-continue" type="button" class="primary-button">继续</button>
+      </div>
+    </div>
+  </main>
+
+  <main id="screen-result" class="screen" hidden>
+    <h2 id="result-heading" class="screen-title"></h2>
+    <p id="result-stars" class="result-stars"></p>
+    <p id="result-summary" class="result-summary"></p>
+    <p id="result-wrong-review" class="result-wrong-review"></p>
+    <div class="result-actions">
+      <button id="result-primary" type="button" class="primary-button"></button>
+      <button id="result-replay" type="button" class="secondary-button">再来一次</button>
+      <button id="result-back" type="button" class="ghost-button">回关卡地图</button>
+    </div>
+  </main>
 
   <script id="game-logic">
     'use strict';
@@ -505,7 +550,114 @@
 
   <script id="game-ui">
     'use strict';
-    // Filled in by Task 4 onward.
+
+    const SCREEN_MAP = 'map';
+    const SCREEN_PLAY = 'play';
+    const SCREEN_RESULT = 'result';
+
+    const MAX_STARS = 3;
+    const STAR_FILLED = '⭐';
+    const STAR_EMPTY = '☆';
+    const LEVEL_LOCK_ICON = '🔒';
+    const MUTE_ICON_ON = '🔊';
+    const MUTE_ICON_OFF = '🔇';
+
+    const gameState = {
+      progress: createInitialProgress(),
+      currentLevelId: null,
+    };
+
+    function elementById(id) {
+      const element = document.getElementById(id);
+      if (element === null) {
+        throw new Error(`Missing element: #${id}`);
+      }
+      return element;
+    }
+
+    function loadProgress() {
+      try {
+        return parseProgress(window.localStorage.getItem(PROGRESS_STORAGE_KEY));
+      } catch (error) {
+        console.error('localStorage is unavailable, progress will not be saved.', error);
+        return createInitialProgress();
+      }
+    }
+
+    function saveProgress(progress) {
+      try {
+        window.localStorage.setItem(PROGRESS_STORAGE_KEY, serializeProgress(progress));
+      } catch (error) {
+        console.error('Failed to save progress.', error);
+      }
+    }
+
+    function showScreen(screenName) {
+      elementById('screen-map').hidden = screenName !== SCREEN_MAP;
+      elementById('screen-play').hidden = screenName !== SCREEN_PLAY;
+      elementById('screen-result').hidden = screenName !== SCREEN_RESULT;
+    }
+
+    function formatStars(starCount) {
+      return STAR_FILLED.repeat(starCount) + STAR_EMPTY.repeat(MAX_STARS - starCount);
+    }
+
+    function buildLevelCard(levelId) {
+      const isUnlocked = isLevelUnlocked(gameState.progress, levelId);
+      const item = document.createElement('li');
+      item.className = isUnlocked ? 'level-card' : 'level-card is-locked';
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'level-button';
+      button.disabled = !isUnlocked;
+      button.addEventListener('click', () => startLevel(levelId));
+
+      const number = document.createElement('span');
+      number.className = 'level-number';
+      number.textContent = isUnlocked ? `第 ${levelId} 关` : LEVEL_LOCK_ICON;
+
+      const title = document.createElement('span');
+      title.className = 'level-name';
+      title.textContent = LEVEL_TITLES[levelId];
+
+      const stars = document.createElement('span');
+      stars.className = 'level-stars';
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        // The timed challenge is never awarded stars, so showing three empty
+        // ones would be a lie. Show its best score instead.
+        const bestScore = gameState.progress.levelBestScore[String(levelId)] || 0;
+        stars.textContent = bestScore > 0 ? `最高 ${bestScore} 题` : '';
+      } else {
+        stars.textContent = formatStars(gameState.progress.levelStars[String(levelId)] || 0);
+      }
+
+      button.append(number, title, stars);
+      item.appendChild(button);
+      return item;
+    }
+
+    function renderLevelMap() {
+      const list = elementById('level-map');
+      list.replaceChildren();
+      for (let levelId = FIRST_LEVEL_ID; levelId <= LEVEL_COUNT; levelId += 1) {
+        list.appendChild(buildLevelCard(levelId));
+      }
+    }
+
+    function goToLevelMap() {
+      renderLevelMap();
+      showScreen(SCREEN_MAP);
+    }
+
+    function initGame() {
+      gameState.progress = loadProgress();
+      elementById('mute-toggle').textContent = MUTE_ICON_ON;
+      elementById('back-to-map').addEventListener('click', goToLevelMap);
+      goToLevelMap();
+    }
+
+    window.addEventListener('DOMContentLoaded', initGame);
   </script>
 </body>
 </html>
