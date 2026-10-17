@@ -603,6 +603,15 @@
     const gameState = {
       progress: createInitialProgress(),
       currentLevelId: null,
+      currentQuestion: null,
+      currentInput: '',
+      questionStream: null,
+      answeredCount: 0,
+      correctCount: 0,
+      combo: 0,
+      wrongQuestions: [],
+      retryQueue: [],
+      isRetrying: false,
     };
 
     function elementById(id) {
@@ -684,14 +693,281 @@
     }
 
     function goToLevelMap() {
+      clearFeedbackTimeout();
       renderLevelMap();
       showScreen(SCREEN_MAP);
+    }
+
+    const KEYPAD_DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
+    const FEEDBACK_DELAY_MS = 400;
+    const ONES_DIGIT_CLASS = 'ones-digit';
+    const FEEDBACK_CLASS_CORRECT = 'is-correct';
+    const FEEDBACK_CLASS_WRONG = 'is-wrong';
+    const COMBO_VISIBLE_FROM = 3;
+
+    function questionCountFor(levelId) {
+      return LEVEL_QUESTION_COUNTS[levelId];
+    }
+
+    function startLevel(levelId) {
+      gameState.currentLevelId = levelId;
+      gameState.questionStream = createQuestionStream(
+        levelId,
+        createRandom(Date.now()),
+        gameState.progress.wrongAnswers,
+      );
+      gameState.answeredCount = 0;
+      gameState.correctCount = 0;
+      gameState.combo = 0;
+      gameState.wrongQuestions = [];
+      gameState.retryQueue = [];
+      gameState.isRetrying = false;
+      gameState.currentQuestion = null;
+      gameState.currentInput = '';
+      elementById('level-title').textContent = LEVEL_TITLES[levelId];
+      elementById('challenge-clock').hidden = true;
+      showScreen(SCREEN_PLAY);
+      presentNextQuestion();
+    }
+
+    function presentNextQuestion() {
+      if (gameState.isRetrying) {
+        if (gameState.retryQueue.length === 0) {
+          finishLevel();
+          return;
+        }
+        gameState.currentQuestion = gameState.retryQueue.shift();
+      } else {
+        if (gameState.answeredCount >= questionCountFor(gameState.currentLevelId)) {
+          beginRetryRound();
+          return;
+        }
+        gameState.currentQuestion = gameState.questionStream.next();
+      }
+      gameState.currentInput = '';
+      renderQuestion();
+      renderKeypad();
+    }
+
+    function beginRetryRound() {
+      if (gameState.wrongQuestions.length === 0) {
+        finishLevel();
+        return;
+      }
+      gameState.isRetrying = true;
+      gameState.retryQueue = gameState.wrongQuestions.slice();
+      presentNextQuestion();
+    }
+
+    function buildDigitNodes(value) {
+      const digits = String(value).split('');
+      const lastIndex = digits.length - 1;
+      return digits.map((digit, index) => {
+        const span = document.createElement('span');
+        span.className = index === lastIndex ? `digit ${ONES_DIGIT_CLASS}` : 'digit';
+        span.textContent = digit;
+        return span;
+      });
+    }
+
+    // The ones digits get their own elements so the hint styles can colour and
+    // ring them without touching the rest of the question.
+    function renderQuestionText() {
+      const question = gameState.currentQuestion;
+      const container = elementById('question-text');
+      container.setAttribute('aria-label', formatQuestion(question));
+      container.replaceChildren(
+        ...buildDigitNodes(question.a),
+        document.createTextNode(' − '),
+        ...buildDigitNodes(question.b),
+        document.createTextNode(' = ?'),
+      );
+    }
+
+    function renderQuestion() {
+      renderQuestionText();
+      elementById('question-text').classList.remove(FEEDBACK_CLASS_CORRECT, FEEDBACK_CLASS_WRONG);
+      elementById('hint-text').textContent = '';
+      if (gameState.isRetrying) {
+        elementById('question-counter').textContent = '错题重练';
+      } else {
+        const total = questionCountFor(gameState.currentLevelId);
+        const shown = Math.min(gameState.answeredCount + 1, total);
+        elementById('question-counter').textContent = `第 ${shown} / ${total} 题`;
+      }
+      renderAnswerDisplay();
+    }
+
+    function renderAnswerDisplay() {
+      elementById('answer-display').textContent = gameState.currentInput;
+      const confirmButton = document.querySelector('.keypad-confirm');
+      if (confirmButton !== null) {
+        confirmButton.disabled = !canSubmitAnswer(gameState.currentInput);
+      }
+    }
+
+    function buildKeypadButton(label, extraClass, onPress) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `keypad-button ${extraClass}`;
+      button.textContent = label;
+      button.addEventListener('click', onPress);
+      return button;
+    }
+
+    function handleDigitInput(digit) {
+      gameState.currentInput = appendDigit(gameState.currentInput, digit);
+      renderAnswerDisplay();
+    }
+
+    function handleBackspace() {
+      gameState.currentInput = removeLastDigit(gameState.currentInput);
+      renderAnswerDisplay();
+    }
+
+    function renderKeypad() {
+      const keypad = elementById('keypad');
+      keypad.replaceChildren();
+      for (const digit of KEYPAD_DIGITS) {
+        keypad.appendChild(
+          buildKeypadButton(String(digit), 'keypad-digit', () => handleDigitInput(digit)),
+        );
+      }
+      keypad.appendChild(buildKeypadButton('⌫', 'keypad-backspace', handleBackspace));
+      keypad.appendChild(buildKeypadButton('确定', 'keypad-confirm', submitAnswer));
+      renderAnswerDisplay();
+    }
+
+    function renderCombo() {
+      const indicator = elementById('combo-indicator');
+      const isVisible = gameState.combo >= COMBO_VISIBLE_FROM;
+      indicator.textContent = isVisible ? `连击 ×${gameState.combo}` : '';
+      indicator.classList.toggle('is-visible', isVisible);
+    }
+
+    function flashQuestion(feedbackClass) {
+      const questionText = elementById('question-text');
+      questionText.classList.remove(FEEDBACK_CLASS_CORRECT, FEEDBACK_CLASS_WRONG);
+      questionText.classList.add(feedbackClass);
+    }
+
+    let feedbackTimeoutId = null;
+
+    // A pending "next question" callback must not survive leaving the level:
+    // if it fired after a new level started it would consume one of that
+    // level's questions before the child ever saw it.
+    function clearFeedbackTimeout() {
+      if (feedbackTimeoutId !== null) {
+        window.clearTimeout(feedbackTimeoutId);
+        feedbackTimeoutId = null;
+      }
+    }
+
+    function scheduleNextQuestion(delayMs) {
+      clearFeedbackTimeout();
+      feedbackTimeoutId = window.setTimeout(presentNextQuestion, delayMs);
+    }
+
+    function submitAnswer() {
+      if (!canSubmitAnswer(gameState.currentInput)) {
+        return;
+      }
+      const question = gameState.currentQuestion;
+      const isCorrect = Number(gameState.currentInput) === question.a - question.b;
+      if (isCorrect) {
+        handleCorrectAnswer();
+      } else {
+        handleWrongAnswer();
+      }
+    }
+
+    function handleCorrectAnswer() {
+      gameState.combo += 1;
+      if (!gameState.isRetrying) {
+        gameState.correctCount += 1;
+        gameState.answeredCount += 1;
+      }
+      renderCombo();
+      flashQuestion(FEEDBACK_CLASS_CORRECT);
+      scheduleNextQuestion(FEEDBACK_DELAY_MS);
+    }
+
+    function handleWrongAnswer() {
+      gameState.combo = 0;
+      renderCombo();
+      if (!gameState.isRetrying) {
+        gameState.answeredCount += 1;
+        gameState.wrongQuestions.push(gameState.currentQuestion);
+        mergeAnswerIntoProgress(gameState.progress, gameState.currentQuestion, false);
+        saveProgress(gameState.progress);
+      }
+      flashQuestion(FEEDBACK_CLASS_WRONG);
+      showDemo(gameState.currentQuestion);
+    }
+
+    function showDemo(question) {
+      const overlay = elementById('demo-overlay');
+      const list = elementById('demo-steps');
+      list.replaceChildren();
+      for (const step of buildDemoSteps(question.a, question.b).steps) {
+        const item = document.createElement('li');
+        item.textContent = step;
+        list.appendChild(item);
+      }
+      overlay.hidden = false;
+    }
+
+    function hideDemo() {
+      elementById('demo-overlay').hidden = true;
+      presentNextQuestion();
+    }
+
+    function finishLevel() {
+      // Implemented in Task 6.
+    }
+
+    const DIGIT_KEY_PATTERN = /^[0-9]$/;
+
+    function isDemoVisible() {
+      return !elementById('demo-overlay').hidden;
+    }
+
+    function handlePhysicalKey(event) {
+      if (elementById('screen-play').hidden) {
+        return;
+      }
+      if (isDemoVisible()) {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          hideDemo();
+        }
+        return;
+      }
+      if (DIGIT_KEY_PATTERN.test(event.key)) {
+        handleDigitInput(Number(event.key));
+        return;
+      }
+      if (event.key === 'Backspace') {
+        event.preventDefault();
+        handleBackspace();
+        return;
+      }
+      if (event.key === 'Enter') {
+        submitAnswer();
+      }
     }
 
     function initGame() {
       gameState.progress = loadProgress();
       elementById('mute-toggle').textContent = MUTE_ICON_ON;
       elementById('back-to-map').addEventListener('click', goToLevelMap);
+      elementById('demo-continue').addEventListener('click', hideDemo);
+      elementById('demo-overlay').addEventListener('click', (event) => {
+        if (event.target === elementById('demo-overlay')) {
+          hideDemo();
+        }
+      });
+      document.addEventListener('keydown', handlePhysicalKey);
       goToLevelMap();
     }
 
