@@ -1,0 +1,9 @@
+{
+  "name": "waynesoft-math-subtraction-game",
+  "version": "0.1.0",
+  "private": true,
+  "description": "100 以内减法闯关游戏（单文件 HTML）",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\""
+  }
+}
