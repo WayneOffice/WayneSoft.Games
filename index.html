@@ -300,10 +300,317 @@
         color: var(--text-dim);
       }
 
+      .play-header {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .play-title {
+        font-size: 22px;
+        font-weight: 700;
+      }
+
+      .play-counter,
+      .challenge-clock {
+        color: var(--text-dim);
+        font-size: 18px;
+      }
+
+      .challenge-clock {
+        color: var(--glow-amber);
+        font-weight: 700;
+      }
+
+      .combo-indicator {
+        margin-left: auto;
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--glow-amber);
+        opacity: 0;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+
+      /* Spec §7 requires the feedback to ramp with the streak, so ×3 and ×8
+         must not look identical. renderCombo sets --combo-step. */
+      .combo-indicator.is-visible {
+        opacity: 1;
+        transform: scale(calc(1 + var(--combo-step, 0) * 0.07));
+        text-shadow: 0 0 calc(14px + var(--combo-step, 0) * 4px) rgb(var(--glow-amber-rgb) / 0.85);
+      }
+
+      .question-area {
+        position: relative;
+        width: 100%;
+        padding: 30px 16px;
+        border-radius: var(--radius-panel);
+        border: 2px solid var(--space-line);
+        background: var(--space-panel);
+        text-align: center;
+        transition: transform 0.25s ease, box-shadow 0.25s ease;
+      }
+
+      .question-area.is-weak-hint {
+        transform: scale(1.05);
+      }
+
+      .question-area.is-strong-hint {
+        border-color: var(--glow-amber);
+        box-shadow: 0 0 24px rgb(var(--glow-amber-rgb) / 0.5);
+      }
+
+      .question-text {
+        margin: 0;
+        font-size: var(--question-font-size);
+        font-weight: 700;
+        letter-spacing: 3px;
+      }
+
+      .question-text .ones-digit {
+        transition: color 0.2s ease;
+      }
+
+      .question-area.is-weak-hint .ones-digit {
+        color: var(--glow-amber);
+      }
+
+      .question-area.is-strong-hint .ones-digit {
+        display: inline-block;
+        min-width: 1.2em;
+        border: 4px solid var(--glow-amber);
+        border-radius: 50%;
+        color: var(--glow-amber);
+      }
+
+      .question-text.is-correct {
+        color: var(--success);
+        text-shadow: 0 0 20px rgb(var(--glow-mint-rgb) / 0.8);
+      }
+
+      .question-text.is-wrong {
+        color: var(--danger);
+        animation: shake 0.3s ease;
+      }
+
+      @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-8px); }
+        75% { transform: translateX(8px); }
+      }
+
+      .answer-display {
+        margin: 14px 0 0;
+        min-height: 62px;
+        font-size: 46px;
+        font-weight: 700;
+        letter-spacing: 5px;
+        color: var(--glow-cyan);
+        text-shadow: var(--glow-soft);
+      }
+
+      .hint-text {
+        margin: 0;
+        min-height: 26px;
+        font-size: 18px;
+        color: var(--glow-amber);
+        text-align: center;
+      }
+
+      .keypad {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+
+      .keypad-button {
+        min-height: var(--touch-target);
+        border: 2px solid var(--space-line);
+        border-radius: var(--radius-button);
+        background: var(--space-panel);
+        color: var(--text-bright);
+        font-family: inherit;
+        font-size: var(--keypad-font-size);
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform 0.12s ease, box-shadow 0.12s ease;
+      }
+
+      .keypad-button:active:not(:disabled) {
+        transform: translateY(2px);
+        box-shadow: var(--glow-soft);
+      }
+
+      .keypad-confirm {
+        background: linear-gradient(160deg, var(--glow-violet), var(--glow-cyan));
+        color: #0a0f26;
+        border-color: transparent;
+      }
+
+      .keypad-confirm:disabled {
+        background: var(--node-locked);
+        color: var(--text-dim);
+        border-color: transparent;
+        cursor: not-allowed;
+      }
+
+      .keypad-skip {
+        border-color: var(--glow-amber);
+        color: var(--glow-amber);
+        font-size: 22px;
+      }
+
+      .demo-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(4, 7, 20, 0.78);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        z-index: 20;
+      }
+
+      .demo-overlay[hidden] {
+        display: none;
+      }
+
+      .demo-card {
+        width: 100%;
+        max-width: 480px;
+        padding: 26px;
+        border-radius: var(--radius-panel);
+        border: 2px solid var(--glow-cyan);
+        background: var(--space-mid);
+        box-shadow: var(--glow-strong);
+        text-align: center;
+      }
+
+      .demo-title {
+        margin: 0 0 14px;
+        font-size: 22px;
+        font-weight: 700;
+      }
+
+      .demo-steps {
+        margin: 0 0 20px;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .demo-steps li {
+        font-size: 30px;
+        font-weight: 700;
+        color: var(--glow-cyan);
+        animation: step-in 0.35s ease both;
+      }
+
+      @keyframes step-in {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .result-stars {
+        margin: 0;
+        font-size: 52px;
+        line-height: 1.1;
+      }
+
+      /* Task 4 put class="screen-title" on the map <h1> and the result <h2>.
+         Task 10 replaced the map markup, so this class now survives only on
+         the result heading — which is the screen meant to reward the child
+         and must not render as a browser-default h2. */
+      .screen-title {
+        margin: 8px 0 0;
+        font-size: 34px;
+        text-align: center;
+        letter-spacing: 2px;
+        text-shadow: var(--glow-soft);
+      }
+
+      .result-summary {
+        margin: 0;
+        font-size: 20px;
+        color: var(--text-dim);
+      }
+
+      .result-wrong-review {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.7;
+        color: var(--glow-amber);
+        text-align: center;
+      }
+
+      .result-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: center;
+      }
+
+      .spark-burst {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: visible;
+      }
+
+      .spark {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        font-size: 22px;
+        animation: spark-fly 0.7s ease-out both;
+      }
+
+      @keyframes spark-fly {
+        from {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(0.4);
+        }
+        to {
+          opacity: 0;
+          transform: translate(calc(-50% + var(--spark-x)), calc(-50% + var(--spark-y))) scale(1.2);
+        }
+      }
+
+      /* There is deliberately no .level-complete-glow rule here. Spec §7 asks
+         for 该星球点亮 — the planet node on the star map — not the question
+         card, and #question-area lives inside #screen-play, which is hidden
+         by the time the result screen appears, so an animation on it would
+         never render. Task 10 owns that effect as .star-node.is-just-cleared
+         / @keyframes planet-light-up. */
+
       @media (prefers-reduced-motion: reduce) {
         .star-node.is-current .star-node-button,
-        .star-node-ship {
+        .star-node.is-just-cleared .star-node-button,
+        .star-node-ship,
+        .question-text.is-wrong,
+        .demo-steps li {
           animation: none;
+        }
+
+        .spark-burst {
+          display: none;
+        }
+
+        .question-area.is-weak-hint {
+          transform: none;
+        }
+
+        .combo-indicator.is-visible {
+          transform: none;
+        }
+
+        .keypad-button:active:not(:disabled),
+        .star-node-button:active:not(:disabled) {
+          transform: none;
         }
       }
   </style>
@@ -1311,6 +1618,7 @@
       const isVisible = gameState.combo >= COMBO_VISIBLE_FROM;
       indicator.textContent = isVisible ? `连击 ×${gameState.combo}` : '';
       indicator.classList.toggle('is-visible', isVisible);
+      renderComboIntensity();
     }
 
     const WEAK_HINT_DELAY_MS = 15 * 1000;
@@ -1525,6 +1833,38 @@
       questionText.classList.add(feedbackClass);
     }
 
+    const SPARK_BURST_CLASS = 'spark-burst';
+    const SPARK_CLASS = 'spark';
+    const SPARK_COUNT = 8;
+    const SPARK_ICONS = ['✨', '⭐', '🌟', '💫'];
+    const SPARK_LIFETIME_MS = 750;
+    const SPARK_RADIUS_PX = 110;
+    const COMBO_INTENSITY_PROPERTY = '--combo-step';
+
+    function spawnSparkBurst() {
+      const area = elementById('question-area');
+      const burst = document.createElement('div');
+      burst.className = SPARK_BURST_CLASS;
+      for (let index = 0; index < SPARK_COUNT; index += 1) {
+        const angle = (Math.PI * 2 * index) / SPARK_COUNT;
+        const spark = document.createElement('span');
+        spark.className = SPARK_CLASS;
+        spark.textContent = SPARK_ICONS[index % SPARK_ICONS.length];
+        spark.style.setProperty('--spark-x', `${Math.cos(angle) * SPARK_RADIUS_PX}px`);
+        spark.style.setProperty('--spark-y', `${Math.sin(angle) * SPARK_RADIUS_PX}px`);
+        burst.appendChild(spark);
+      }
+      area.appendChild(burst);
+      window.setTimeout(() => burst.remove(), SPARK_LIFETIME_MS);
+    }
+
+    // Spec §7 requires the feedback to ramp with the streak. The CSS scales
+    // and brightens off this one property.
+    function renderComboIntensity() {
+      const steps = Math.max(gameState.combo - COMBO_VISIBLE_FROM, 0);
+      elementById('combo-indicator').style.setProperty(COMBO_INTENSITY_PROPERTY, String(steps));
+    }
+
     let feedbackTimeoutId = null;
 
     // Set while a judgement's feedback is on screen. Without it a second tap on
@@ -1576,6 +1916,7 @@
         playSound(SOUND.COMBO);
       }
       flashQuestion(FEEDBACK_CLASS_CORRECT);
+      spawnSparkBurst();
       isFeedbackPending = true;
       scheduleNextQuestion(FEEDBACK_DELAY_MS);
     }
@@ -1646,6 +1987,11 @@
         playSound(SOUND.LEVEL_COMPLETE);
       }
       renderResult(levelId, stars, isPassed, total);
+      if (isPassed) {
+        // Consumed and cleared by renderLevelMap on the way back to the map,
+        // so the planet the child just lit up is the one that animates.
+        gameState.justClearedLevelId = levelId;
+      }
       showScreen(SCREEN_RESULT);
     }
 
