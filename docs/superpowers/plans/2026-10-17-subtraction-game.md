@@ -130,6 +130,7 @@ const LOGIC_SCRIPT_PATTERN = /<script id="game-logic">([\s\S]*?)<\/script>/;
 const EXPORTED_NAMES = [
   'MAX_ANSWER_DIGITS',
   'LEVEL_COUNT',
+  'MAX_STARS',
   'MIXED_LEVEL_ID',
   'TIMED_CHALLENGE_LEVEL_ID',
   'TIMED_CHALLENGE_SECONDS',
@@ -983,6 +984,8 @@ Expected: FAIL —— `logic.computeStars is not a function`
     const PERCENT_SCALE = 100;
     const PASS_ACCURACY_PERCENT = 80;
     const TWO_STAR_ACCURACY_PERCENT = 90;
+    const MAX_STARS = 3;
+    const MIN_EARNED_STARS = 1;
     const MAX_TRACKED_WRONG_ANSWERS = 50;
     const PROGRESS_STORAGE_KEY = 'waynesoft.math.subtraction-game.progress.v1';
 
@@ -991,7 +994,7 @@ Expected: FAIL —— `logic.computeStars is not a function`
         return 0;
       }
       if (correctCount >= questionCount) {
-        return 3;
+        return MAX_STARS;
       }
       if (correctCount * PERCENT_SCALE >= questionCount * TWO_STAR_ACCURACY_PERCENT) {
         return 2;
@@ -1369,7 +1372,9 @@ git commit -m "feat: 进度模型与输入规则"
     const SCREEN_PLAY = 'play';
     const SCREEN_RESULT = 'result';
 
-    const MAX_STARS = 3;
+    // MAX_STARS is NOT declared here. Task 4's review fix moved it into the
+    // game-logic block, because a duplicate top-level const across the two
+    // classic scripts is a hard SyntaxError, not a shadow.
     const STAR_FILLED = '⭐';
     const STAR_EMPTY = '☆';
     const LEVEL_LOCK_ICON = '🔒';
