@@ -356,6 +356,151 @@
           throw new Error(`Unknown demo strategy for ${a} - ${b}`);
       }
     }
+
+    const MAX_ANSWER_DIGITS = 2;
+    const FIRST_LEVEL_ID = 1;
+    const PERCENT_SCALE = 100;
+    const PASS_ACCURACY_PERCENT = 80;
+    const TWO_STAR_ACCURACY_PERCENT = 90;
+    const MAX_TRACKED_WRONG_ANSWERS = 50;
+    const PROGRESS_STORAGE_KEY = 'waynesoft.math.subtraction-game.progress.v1';
+
+    function computeStars(correctCount, questionCount) {
+      if (questionCount <= 0) {
+        return 0;
+      }
+      if (correctCount >= questionCount) {
+        return 3;
+      }
+      if (correctCount * PERCENT_SCALE >= questionCount * TWO_STAR_ACCURACY_PERCENT) {
+        return 2;
+      }
+      if (correctCount * PERCENT_SCALE >= questionCount * PASS_ACCURACY_PERCENT) {
+        return 1;
+      }
+      return 0;
+    }
+
+    function isLevelPassed(correctCount, questionCount) {
+      return computeStars(correctCount, questionCount) > 0;
+    }
+
+    function createInitialProgress() {
+      return {
+        levelStars: {},
+        levelBestScore: {},
+        wrongAnswers: [],
+        isMuted: false,
+      };
+    }
+
+    function isPlainObject(value) {
+      return typeof value === 'object' && value !== null && !Array.isArray(value);
+    }
+
+    function isValidWrongAnswer(entry) {
+      return isPlainObject(entry)
+        && Number.isInteger(entry.a)
+        && Number.isInteger(entry.b)
+        && entry.a > 0
+        && entry.b > 0
+        && entry.b < entry.a;
+    }
+
+    // A hand-edited or half-written save can hold entries the game would then
+    // feed straight into the question generator, producing "undefined −
+    // undefined = ?". Drop anything that is not a usable question.
+    function parseWrongAnswers(value) {
+      if (!Array.isArray(value)) {
+        return [];
+      }
+      return value.filter(isValidWrongAnswer).map((entry) => ({
+        a: entry.a,
+        b: entry.b,
+        count: Number.isInteger(entry.count) && entry.count > 0 ? entry.count : 1,
+      }));
+    }
+
+    function parseProgress(rawValue) {
+      if (typeof rawValue !== 'string') {
+        return createInitialProgress();
+      }
+      try {
+        const parsed = JSON.parse(rawValue);
+        if (!isPlainObject(parsed)) {
+          return createInitialProgress();
+        }
+        return {
+          levelStars: isPlainObject(parsed.levelStars) ? parsed.levelStars : {},
+          levelBestScore: isPlainObject(parsed.levelBestScore) ? parsed.levelBestScore : {},
+          wrongAnswers: parseWrongAnswers(parsed.wrongAnswers),
+          isMuted: parsed.isMuted === true,
+        };
+      } catch (error) {
+        console.error('Failed to parse saved progress, starting fresh.', error);
+        return createInitialProgress();
+      }
+    }
+
+    function serializeProgress(progress) {
+      return JSON.stringify(progress);
+    }
+
+    function isLevelUnlocked(progress, levelId) {
+      if (levelId <= FIRST_LEVEL_ID) {
+        return true;
+      }
+      return (progress.levelStars[String(levelId - 1)] || 0) > 0;
+    }
+
+    function mergeAnswerIntoProgress(progress, question, isCorrect) {
+      if (isCorrect) {
+        return progress;
+      }
+      const key = questionKey(question);
+      const existing = progress.wrongAnswers.find((entry) => questionKey(entry) === key);
+      if (existing !== undefined) {
+        existing.count += 1;
+        return progress;
+      }
+      progress.wrongAnswers.push({ a: question.a, b: question.b, count: 1 });
+      if (progress.wrongAnswers.length > MAX_TRACKED_WRONG_ANSWERS) {
+        progress.wrongAnswers.shift();
+      }
+      return progress;
+    }
+
+    function recordLevelResult(progress, levelId, correctCount, questionCount) {
+      const key = String(levelId);
+      const stars = computeStars(correctCount, questionCount);
+      if (stars > (progress.levelStars[key] || 0)) {
+        progress.levelStars[key] = stars;
+      }
+      if (correctCount > (progress.levelBestScore[key] || 0)) {
+        progress.levelBestScore[key] = correctCount;
+      }
+      return progress;
+    }
+
+    function appendDigit(currentInput, digit) {
+      if (currentInput.length >= MAX_ANSWER_DIGITS) {
+        return currentInput;
+      }
+      // The difference is never zero on any level, so a leading zero is
+      // always a slip and is dropped rather than shown as "07".
+      if (currentInput.length === 0 && digit === 0) {
+        return currentInput;
+      }
+      return currentInput + String(digit);
+    }
+
+    function removeLastDigit(currentInput) {
+      return currentInput.slice(0, -1);
+    }
+
+    function canSubmitAnswer(currentInput) {
+      return currentInput.length > 0;
+    }
   </script>
 
   <script id="game-ui">
