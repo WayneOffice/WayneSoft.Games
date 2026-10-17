@@ -694,6 +694,7 @@
 
     function goToLevelMap() {
       clearFeedbackTimeout();
+      isFeedbackPending = false;
       renderLevelMap();
       showScreen(SCREEN_MAP);
     }
@@ -716,6 +717,8 @@
         createRandom(Date.now()),
         gameState.progress.wrongAnswers,
       );
+      isFeedbackPending = false;
+      elementById('demo-overlay').hidden = true;
       gameState.answeredCount = 0;
       gameState.correctCount = 0;
       gameState.combo = 0;
@@ -732,6 +735,7 @@
     }
 
     function presentNextQuestion() {
+      isFeedbackPending = false;
       if (gameState.isRetrying) {
         if (gameState.retryQueue.length === 0) {
           finishLevel();
@@ -755,6 +759,8 @@
         finishLevel();
         return;
       }
+      gameState.combo = 0;
+      renderCombo();
       gameState.isRetrying = true;
       gameState.retryQueue = gameState.wrongQuestions.slice();
       presentNextQuestion();
@@ -799,9 +805,12 @@
       renderAnswerDisplay();
     }
 
+    // Cached by renderKeypad so toggling the confirm button needs no
+    // document-wide query on every keystroke.
+    let confirmButton = null;
+
     function renderAnswerDisplay() {
       elementById('answer-display').textContent = gameState.currentInput;
-      const confirmButton = document.querySelector('.keypad-confirm');
       if (confirmButton !== null) {
         confirmButton.disabled = !canSubmitAnswer(gameState.currentInput);
       }
@@ -835,7 +844,8 @@
         );
       }
       keypad.appendChild(buildKeypadButton('⌫', 'keypad-backspace', handleBackspace));
-      keypad.appendChild(buildKeypadButton('确定', 'keypad-confirm', submitAnswer));
+      confirmButton = buildKeypadButton('确定', 'keypad-confirm', submitAnswer);
+      keypad.appendChild(confirmButton);
       renderAnswerDisplay();
     }
 
@@ -854,6 +864,12 @@
 
     let feedbackTimeoutId = null;
 
+    // Set while a judgement's feedback is on screen. Without it a second tap on
+    // 确定 — or one Enter that both submits and activates the focused button —
+    // would score the same question twice, and an edit made in between would
+    // record a correctly answered question as a wrong one.
+    let isFeedbackPending = false;
+
     // A pending "next question" callback must not survive leaving the level:
     // if it fired after a new level started it would consume one of that
     // level's questions before the child ever saw it.
@@ -870,7 +886,7 @@
     }
 
     function submitAnswer() {
-      if (!canSubmitAnswer(gameState.currentInput)) {
+      if (isFeedbackPending || !canSubmitAnswer(gameState.currentInput)) {
         return;
       }
       const question = gameState.currentQuestion;
@@ -890,6 +906,7 @@
       }
       renderCombo();
       flashQuestion(FEEDBACK_CLASS_CORRECT);
+      isFeedbackPending = true;
       scheduleNextQuestion(FEEDBACK_DELAY_MS);
     }
 
@@ -902,6 +919,7 @@
         mergeAnswerIntoProgress(gameState.progress, gameState.currentQuestion, false);
         saveProgress(gameState.progress);
       }
+      isFeedbackPending = true;
       flashQuestion(FEEDBACK_CLASS_WRONG);
       showDemo(gameState.currentQuestion);
     }
@@ -954,6 +972,9 @@
         return;
       }
       if (event.key === 'Enter') {
+        // Without this the focused 确定 button also fires its own click, which
+        // would submit the same answer a second time.
+        event.preventDefault();
         submitAnswer();
       }
     }
