@@ -24,6 +24,7 @@
 - **每个 `catch` 必须带异常对象记录日志**，禁止空 `catch`。
 - **方法体 ≤ 50 行，参数 ≤ 5 个，嵌套 ≤ 3 层。**
 - 游戏文案与常量必须与 spec 逐字一致：关卡题数 `{1:10, 2:10, 3:10, 4:10, 5:12, 6:12, 7:12, 8:12, 9:15}`；限时挑战 `60` 秒；过关线正确率 `80%`；星级 `100%→3星 / ≥90%→2星 / ≥80%→1星`；历史错题优先比例 `30%`；弱提示 `15` 秒、强提示 `30` 秒；localStorage 键名 `waynesoft.math.subtraction-game.progress.v1`。
+- **视觉主题是太空闯关**（spec §7）：深空蓝紫底 + 发光描边 + 星尘，10 关沿一条横向星图排布，答对星光炸开、过关星球点亮。全部用 emoji + CSS 实现，**不引外部图片、字体或动画库**——单文件可单发优先于视觉便利。动效必须尊重 `prefers-reduced-motion`。
 
 ---
 
@@ -2642,45 +2643,219 @@ git commit -m "feat: 限时挑战关"
 
 ---
 
-## Task 10: 响应式样式 + 端到端验收
+## Task 10: 太空主题设计令牌 + 星图关卡地图
 
 **Files:**
-- Modify: `index.html`（替换空的 `<style>` 块）
+- Modify: `index.html`（`<style>` 分区填入设计令牌与地图样式；`<script id="game-ui">` 内重写 `renderLevelMap` / `buildLevelCard`）
 
 **Interfaces:**
-- Consumes: 前面所有任务定义的 class 名与 id
-- Produces: 无新接口
+- Consumes: `LEVEL_COUNT`、`FIRST_LEVEL_ID`、`LEVEL_TITLES`、`TIMED_CHALLENGE_LEVEL_ID`、`isLevelUnlocked`、`gameState`、`formatStars`、`elementById`、`goToLevelMap`、`startLevel`
+- Produces（Task 11 全部消费）:
+  - **设计令牌** —— 全套 CSS 自定义属性定义在 `:root`，Task 11 只引用不重定义
+  - `levelState(levelId): string` —— 返回 `is-cleared` / `is-current` / `is-locked` 之一
+  - `buildStarMapNode(levelId): HTMLElement`、`renderLevelMap(): void`
+  - `buildLevelDetail(levelId): HTMLElement`、`renderLevelDetail(): void`、`selectLevel(levelId): void`
+  - 常量：`PLANET_ICONS`、`STAR_MAP_STATE_CLEARED`、`STAR_MAP_STATE_CURRENT`、`STAR_MAP_STATE_LOCKED`
 
-**样式硬性要求（spec §7、§2.2）：**
-- 题目字号 ≥ `48px`（实现取 `56px`）。
-- 触屏按钮最小 `64px`（≥ 48px 的可点面积）。
-- 明亮卡通风：糖果色、圆角、大按钮。
-- 覆盖安卓平板（主要）与 Windows 电脑；手机不破版。
-- 必须实现 `is-weak-hint`、`is-strong-hint`、`is-correct`、`is-wrong`、`is-locked`、`is-visible`、`keypad-confirm:disabled` 这几组状态样式，否则 Task 7 的提示与 Task 4 的锁形同虚设。
+**设计方向（spec §7）：** 深空蓝紫底 + 发光描边 + 星尘；10 关沿一条横向星图排布，不是一格格卡片。已通关节点点亮并显示星星，当前节点高亮，未解锁节点暗色锁定。点节点在下方详情卡里显示该关信息与「开始」。
 
-- [ ] **Step 1: 填入完整样式**
+```
+🌌 减法星球                         🔊
+●━━━●━━━○━━━○━━━○━━━○  (可横向滚动)
+1   2   3   4   5   6  …
+┌──────────────────────────┐
+│ 第 1 关 · 两位数减一位数   │
+│        ⭐⭐⭐             │
+│       [ 开始 ]            │
+└──────────────────────────┘
+```
 
-把 `index.html` 中 `<style>` 的内容替换为：
+- [ ] **Step 1: 替换 `#screen-map` 的标记**
+
+把 `<main id="screen-map" class="screen">…</main>` 整段替换为：
+
+```html
+  <main id="screen-map" class="screen">
+    <header class="app-header">
+      <h1 class="app-title">🌌 减法星球</h1>
+      <p class="app-subtitle">沿着星图，一关一关往前闯</p>
+    </header>
+    <div class="star-map-scroll">
+      <ol id="star-map" class="star-map"></ol>
+    </div>
+    <section id="level-detail" class="level-detail"></section>
+  </main>
+```
+
+- [ ] **Step 2: 用星图渲染替换 `buildLevelCard` 与 `renderLevelMap`**
+
+把 `index.html` 的 `<script id="game-ui">` 里现有的 `buildLevelCard` 与 `renderLevelMap` 两个函数**整体删除**，替换为下面代码。
+
+```js
+    const PLANET_ICONS = ['🪐', '🌕', '⭐', '☄️', '🌠', '🔭', '🚀', '🛸', '🌌', '👽'];
+    const STAR_MAP_STATE_CLEARED = 'is-cleared';
+    const STAR_MAP_STATE_CURRENT = 'is-current';
+    const STAR_MAP_STATE_LOCKED = 'is-locked';
+    const LOCKED_ICON = '🔒';
+
+    function levelState(levelId) {
+      if ((gameState.progress.levelStars[String(levelId)] || 0) > 0) {
+        return STAR_MAP_STATE_CLEARED;
+      }
+      if (isLevelUnlocked(gameState.progress, levelId)) {
+        return STAR_MAP_STATE_CURRENT;
+      }
+      return STAR_MAP_STATE_LOCKED;
+    }
+
+    function isLevelCleared(levelId) {
+      return levelState(levelId) === STAR_MAP_STATE_CLEARED;
+    }
+
+    function buildStarMapNode(levelId) {
+      const state = levelState(levelId);
+      const isUnlocked = state !== STAR_MAP_STATE_LOCKED;
+      const item = document.createElement('li');
+      item.className = `star-node ${state}`;
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'star-node-button';
+      button.disabled = !isUnlocked;
+      button.setAttribute('aria-label', `第 ${levelId} 关 ${LEVEL_TITLES[levelId]}`);
+      button.addEventListener('click', () => selectLevel(levelId));
+
+      const icon = document.createElement('span');
+      icon.className = 'star-node-icon';
+      icon.textContent = isUnlocked ? PLANET_ICONS[levelId - 1] : LOCKED_ICON;
+
+      const number = document.createElement('span');
+      number.className = 'star-node-number';
+      number.textContent = String(levelId);
+
+      button.append(icon, number);
+      item.appendChild(button);
+
+      if (isLevelCleared(levelId)) {
+        const stars = document.createElement('span');
+        stars.className = 'star-node-stars';
+        stars.textContent = formatStars(gameState.progress.levelStars[String(levelId)] || 0);
+        item.appendChild(stars);
+      }
+      return item;
+    }
+
+    function renderLevelMap() {
+      const list = elementById('star-map');
+      list.replaceChildren();
+      for (let levelId = FIRST_LEVEL_ID; levelId <= LEVEL_COUNT; levelId += 1) {
+        list.appendChild(buildStarMapNode(levelId));
+      }
+      renderLevelDetail();
+    }
+
+    function firstPlayableLevelId() {
+      for (let levelId = FIRST_LEVEL_ID; levelId <= LEVEL_COUNT; levelId += 1) {
+        if (!isLevelCleared(levelId)) {
+          return levelId;
+        }
+      }
+      return LEVEL_COUNT;
+    }
+
+    function buildLevelDetail(levelId) {
+      const state = levelState(levelId);
+      const isUnlocked = state !== STAR_MAP_STATE_LOCKED;
+      const fragment = document.createDocumentFragment();
+
+      const heading = document.createElement('h2');
+      heading.className = 'level-detail-heading';
+      heading.textContent = `第 ${levelId} 关 · ${LEVEL_TITLES[levelId]}`;
+      fragment.appendChild(heading);
+
+      const stars = document.createElement('p');
+      stars.className = 'level-detail-stars';
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        const bestScore = gameState.progress.levelBestScore[String(levelId)] || 0;
+        stars.textContent = bestScore > 0 ? `最高 ${bestScore} 题` : '60 秒内答对越多越好';
+      } else {
+        stars.textContent = formatStars(gameState.progress.levelStars[String(levelId)] || 0);
+      }
+      fragment.appendChild(stars);
+
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'primary-button level-detail-action';
+      action.disabled = !isUnlocked;
+      action.textContent = isUnlocked ? '开始' : '还没解锁';
+      if (isUnlocked) {
+        action.addEventListener('click', () => startLevel(levelId));
+      }
+      fragment.appendChild(action);
+
+      return fragment;
+    }
+
+    function renderLevelDetail() {
+      const container = elementById('level-detail');
+      container.replaceChildren(buildLevelDetail(gameState.selectedLevelId));
+    }
+
+    function selectLevel(levelId) {
+      gameState.selectedLevelId = levelId;
+      renderLevelMap();
+    }
+```
+
+- [ ] **Step 3: 在 `gameState` 里加选中项，并让返回地图时复位**
+
+1. 在 `gameState` 的定义里，把
+```js
+      currentLevelId: null,
+```
+改成
+```js
+      currentLevelId: null,
+      selectedLevelId: null,
+```
+
+2. 把 `goToLevelMap` 改成
+
+```js
+    function goToLevelMap() {
+      clearFeedbackTimeout();
+      gameState.selectedLevelId = firstPlayableLevelId();
+      renderLevelMap();
+      showScreen(SCREEN_MAP);
+    }
+```
+
+- [ ] **Step 4: 填入设计令牌与星图样式**
+
+把 `<style>` 分区（Task 1 起一直是空的）替换为下面内容。
 
 ```css
       :root {
-        --color-background: #fdf3e0;
-        --color-surface: #ffffff;
-        --color-primary: #ff8a4c;
-        --color-primary-dark: #e86f2e;
-        --color-secondary: #7ec8e3;
-        --color-correct: #4caf50;
-        --color-wrong: #ef5350;
-        --color-text: #3d3226;
-        --color-muted: #a89b8a;
-        --color-locked: #ded5c6;
-        --radius-card: 20px;
-        --radius-button: 16px;
+        --space-deep: #070b1c;
+        --space-mid: #131a3d;
+        --space-panel: rgba(30, 39, 82, 0.92);
+        --space-line: rgba(120, 160, 255, 0.35);
+        --glow-cyan: #4fd1ff;
+        --glow-violet: #a678ff;
+        --glow-amber: #ffd166;
+        --glow-mint: #5eead4;
+        --danger: #ff6b81;
+        --success: #5eead4;
+        --text-bright: #f2f5ff;
+        --text-dim: #96a3d0;
+        --node-locked: #2a3160;
+        --radius-panel: 24px;
+        --radius-button: 18px;
         --touch-target: 64px;
         --question-font-size: 56px;
         --keypad-font-size: 32px;
-        --shadow-card: 0 4px 0 rgba(0, 0, 0, 0.12);
-        --shadow-button: 0 3px 0 rgba(0, 0, 0, 0.18);
+        --glow-soft: 0 0 18px rgba(79, 209, 255, 0.45);
+        --glow-strong: 0 0 28px rgba(166, 120, 255, 0.65);
       }
 
       * {
@@ -2691,9 +2866,12 @@ git commit -m "feat: 限时挑战关"
       body {
         margin: 0;
         min-height: 100vh;
-        background: var(--color-background);
-        color: var(--color-text);
+        color: var(--text-bright);
         font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        background:
+          radial-gradient(1100px 600px at 15% -10%, rgba(166, 120, 255, 0.28), transparent 60%),
+          radial-gradient(900px 500px at 90% 0%, rgba(79, 209, 255, 0.22), transparent 55%),
+          var(--space-deep);
         display: flex;
         justify-content: center;
         padding: 16px;
@@ -2701,27 +2879,32 @@ git commit -m "feat: 限时挑战关"
 
       .screen {
         width: 100%;
-        max-width: 720px;
+        max-width: 760px;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 16px;
+        gap: 18px;
       }
 
       .screen[hidden] {
         display: none;
       }
 
-      .screen-title {
-        margin: 8px 0 0;
-        font-size: 32px;
+      .app-header {
         text-align: center;
       }
 
-      .screen-subtitle {
+      .app-title {
+        margin: 8px 0 4px;
+        font-size: 34px;
+        letter-spacing: 2px;
+        text-shadow: var(--glow-soft);
+      }
+
+      .app-subtitle {
         margin: 0;
-        color: var(--color-muted);
-        font-size: 18px;
+        color: var(--text-dim);
+        font-size: 17px;
       }
 
       .mute-toggle {
@@ -2730,64 +2913,232 @@ git commit -m "feat: 限时挑战关"
         right: 12px;
         width: 56px;
         height: 56px;
-        border: none;
+        border: 2px solid var(--space-line);
         border-radius: 50%;
-        background: var(--color-surface);
-        box-shadow: var(--shadow-card);
+        background: var(--space-panel);
+        color: var(--text-bright);
         font-size: 24px;
         cursor: pointer;
         z-index: 10;
       }
 
-      .level-map {
-        list-style: none;
-        margin: 0;
-        padding: 0;
+      .star-map-scroll {
         width: 100%;
-        display: grid;
-        gap: 12px;
-        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        overflow-x: auto;
+        padding: 10px 4px 4px;
+        scrollbar-width: thin;
       }
 
-      .level-button {
-        width: 100%;
-        min-height: var(--touch-target);
-        padding: 14px 18px;
-        border: none;
-        border-radius: var(--radius-card);
-        background: var(--color-surface);
-        box-shadow: var(--shadow-card);
-        color: inherit;
-        font-family: inherit;
-        font-size: 20px;
+      .star-map {
+        list-style: none;
+        margin: 0;
+        padding: 0 8px;
+        display: flex;
+        align-items: flex-start;
+        gap: 4px;
+        min-width: max-content;
+      }
+
+      .star-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        position: relative;
+      }
+
+      .star-node + .star-node::before {
+        content: "";
+        position: absolute;
+        top: 30px;
+        left: -18px;
+        width: 32px;
+        height: 3px;
+        border-radius: 2px;
+        background: var(--space-line);
+      }
+
+      .star-node.is-cleared + .star-node::before {
+        background: var(--glow-cyan);
+        box-shadow: var(--glow-soft);
+      }
+
+      .star-node-button {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        border: 3px solid var(--space-line);
+        background: var(--space-panel);
+        color: var(--text-bright);
+        font-size: 26px;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 10px;
+        justify-content: center;
+        cursor: pointer;
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
+      }
+
+      .star-node.is-cleared .star-node-button {
+        border-color: var(--glow-cyan);
+        box-shadow: var(--glow-soft);
+      }
+
+      .star-node.is-current .star-node-button {
+        border-color: var(--glow-amber);
+        box-shadow: 0 0 22px rgba(255, 209, 102, 0.7);
+        animation: node-pulse 1.8s ease-in-out infinite;
+      }
+
+      .star-node.is-locked .star-node-button {
+        background: var(--node-locked);
+        border-color: transparent;
+        color: var(--text-dim);
+        cursor: not-allowed;
+      }
+
+      .star-node-button:active:not(:disabled) {
+        transform: scale(0.92);
+      }
+
+      .star-node-number {
+        position: absolute;
+        top: 62px;
+        font-size: 13px;
+        color: var(--text-dim);
+      }
+
+      .star-node-stars {
+        margin-top: 20px;
+        font-size: 13px;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
+      @keyframes node-pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.08); }
+      }
+
+      .level-detail {
+        width: 100%;
+        max-width: 460px;
+        padding: 22px 20px;
+        border-radius: var(--radius-panel);
+        border: 2px solid var(--space-line);
+        background: var(--space-panel);
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .level-detail-heading {
+        margin: 0;
+        font-size: 22px;
+      }
+
+      .level-detail-stars {
+        margin: 0;
+        font-size: 30px;
+        line-height: 1;
+        color: var(--text-dim);
+      }
+
+      .level-detail-action {
+        width: 100%;
+        max-width: 260px;
+      }
+
+      .primary-button,
+      .secondary-button,
+      .ghost-button {
+        min-height: var(--touch-target);
+        padding: 0 26px;
+        border: none;
+        border-radius: var(--radius-button);
+        font-family: inherit;
+        font-size: 22px;
+        font-weight: 700;
         cursor: pointer;
       }
 
-      .level-card.is-locked .level-button {
-        background: var(--color-locked);
-        color: var(--color-muted);
+      .primary-button {
+        background: linear-gradient(160deg, var(--glow-violet), var(--glow-cyan));
+        color: #0a0f26;
+        box-shadow: var(--glow-soft);
+      }
+
+      .primary-button:disabled {
+        background: var(--node-locked);
+        color: var(--text-dim);
         box-shadow: none;
         cursor: not-allowed;
       }
 
-      .level-number {
-        font-weight: 700;
-        white-space: nowrap;
+      .secondary-button {
+        background: var(--space-panel);
+        border: 2px solid var(--glow-cyan);
+        color: var(--glow-cyan);
       }
 
-      .level-name {
-        flex: 1;
-        text-align: left;
+      .ghost-button {
+        background: transparent;
+        color: var(--text-dim);
       }
 
-      .level-stars {
-        white-space: nowrap;
+      @media (prefers-reduced-motion: reduce) {
+        .star-node.is-current .star-node-button {
+          animation: none;
+        }
       }
+```
 
+- [ ] **Step 5: 手工验证**
+
+Run: 浏览器打开 `index.html`。
+Expected:
+- 深空蓝紫渐变背景，标题「🌌 减法星球」带发光。
+- 一行 10 个圆形星球节点，节点之间有线相连；第 1 关是琥珀色高亮并轻微脉动，第 2–10 关是暗色 🔒。
+- 节点下方显示关号；已通关的节点下方显示星星（此刻都还没有）。
+- 下方详情卡显示「第 1 关 · 两位数减一位数」、☆☆☆、可点的「开始」。
+- 点第 5 关（锁着）无反应；点第 1 关节点，详情卡切到第 1 关。
+- 页面加载后控制台无报错。
+- 点「开始」会跳进答题页（Task 5 已实现）。
+- 在系统设置里打开「减少动态效果」后刷新，节点不再脉动。
+
+- [ ] **Step 6: 运行测试**
+
+Run: `npm test`
+Expected: PASS（51/51，本任务不碰 `game-logic`）
+
+- [ ] **Step 7: 提交**
+
+```bash
+git add index.html
+git commit -m "feat: 太空主题设计令牌与星图关卡地图"
+```
+
+---
+
+## Task 11: 答题与结算界面的视觉与动效
+
+**Files:**
+- Modify: `index.html`（`<style>` 分区追加；`<script id="game-ui">` 内加特效钩子）
+
+**Interfaces:**
+- Consumes: Task 10 的全部设计令牌；`gameState`、`elementById`、`FLASH_*`、`COMBO_VISIBLE_FROM`
+- Produces:
+  - `spawnSparkBurst(): void`、`renderLevelCompleteGlow(): void`
+  - 常量：`SPARK_BURST_CLASS`、`SPARK_COUNT`、`SPARK_LIFETIME_MS`
+
+**视觉要求（spec §7）：** 答对时星光从题目处炸开；答错红色抖动；连击反馈强度递增；过关时星球点亮 + 星尘庆祝。全部用 emoji + CSS，不引外部资源。`prefers-reduced-motion` 开启时关闭位移与缩放类动画。
+
+- [ ] **Step 1: 追加答题与结算界面样式**
+
+把下面 CSS 追加到 `<style>` 分区末尾（`@media (prefers-reduced-motion: reduce)` 块之前）。
+
+```css
       .play-header {
         width: 100%;
         display: flex;
@@ -2803,15 +3154,21 @@ git commit -m "feat: 限时挑战关"
 
       .play-counter,
       .challenge-clock {
-        color: var(--color-muted);
+        color: var(--text-dim);
         font-size: 18px;
+      }
+
+      .challenge-clock {
+        color: var(--glow-amber);
+        font-weight: 700;
       }
 
       .combo-indicator {
         margin-left: auto;
         font-size: 20px;
         font-weight: 700;
-        color: var(--color-primary-dark);
+        color: var(--glow-amber);
+        text-shadow: 0 0 14px rgba(255, 209, 102, 0.8);
         opacity: 0;
         transition: opacity 0.2s ease;
       }
@@ -2821,44 +3178,55 @@ git commit -m "feat: 限时挑战关"
       }
 
       .question-area {
+        position: relative;
         width: 100%;
-        padding: 28px 16px;
-        border-radius: var(--radius-card);
-        background: var(--color-surface);
-        box-shadow: var(--shadow-card);
+        padding: 30px 16px;
+        border-radius: var(--radius-panel);
+        border: 2px solid var(--space-line);
+        background: var(--space-panel);
         text-align: center;
-        transition: transform 0.25s ease;
+        transition: transform 0.25s ease, box-shadow 0.25s ease;
       }
 
       .question-area.is-weak-hint {
-        transform: scale(1.06);
+        transform: scale(1.05);
+      }
+
+      .question-area.is-strong-hint {
+        border-color: var(--glow-amber);
+        box-shadow: 0 0 24px rgba(255, 209, 102, 0.5);
       }
 
       .question-text {
         margin: 0;
         font-size: var(--question-font-size);
         font-weight: 700;
-        letter-spacing: 2px;
+        letter-spacing: 3px;
+      }
+
+      .question-text .ones-digit {
+        transition: color 0.2s ease;
       }
 
       .question-area.is-weak-hint .ones-digit {
-        color: var(--color-primary);
+        color: var(--glow-amber);
       }
 
       .question-area.is-strong-hint .ones-digit {
         display: inline-block;
-        min-width: 1.15em;
-        border: 4px solid var(--color-primary);
+        min-width: 1.2em;
+        border: 4px solid var(--glow-amber);
         border-radius: 50%;
-        color: var(--color-primary-dark);
+        color: var(--glow-amber);
       }
 
       .question-text.is-correct {
-        color: var(--color-correct);
+        color: var(--success);
+        text-shadow: 0 0 20px rgba(94, 234, 212, 0.8);
       }
 
       .question-text.is-wrong {
-        color: var(--color-wrong);
+        color: var(--danger);
         animation: shake 0.3s ease;
       }
 
@@ -2869,19 +3237,20 @@ git commit -m "feat: 限时挑战关"
       }
 
       .answer-display {
-        margin: 12px 0 0;
-        min-height: 60px;
-        font-size: 44px;
+        margin: 14px 0 0;
+        min-height: 62px;
+        font-size: 46px;
         font-weight: 700;
-        color: var(--color-primary-dark);
-        letter-spacing: 4px;
+        letter-spacing: 5px;
+        color: var(--glow-cyan);
+        text-shadow: var(--glow-soft);
       }
 
       .hint-text {
         margin: 0;
         min-height: 26px;
         font-size: 18px;
-        color: var(--color-primary-dark);
+        color: var(--glow-amber);
         text-align: center;
       }
 
@@ -2894,43 +3263,45 @@ git commit -m "feat: 限时挑战关"
 
       .keypad-button {
         min-height: var(--touch-target);
-        border: none;
+        border: 2px solid var(--space-line);
         border-radius: var(--radius-button);
-        background: var(--color-surface);
-        box-shadow: var(--shadow-button);
-        color: inherit;
+        background: var(--space-panel);
+        color: var(--text-bright);
         font-family: inherit;
         font-size: var(--keypad-font-size);
         font-weight: 700;
         cursor: pointer;
+        transition: transform 0.12s ease, box-shadow 0.12s ease;
       }
 
-      .keypad-button:active {
+      .keypad-button:active:not(:disabled) {
         transform: translateY(2px);
-        box-shadow: none;
+        box-shadow: var(--glow-soft);
       }
 
       .keypad-confirm {
-        background: var(--color-primary);
-        color: #ffffff;
+        background: linear-gradient(160deg, var(--glow-violet), var(--glow-cyan));
+        color: #0a0f26;
+        border-color: transparent;
       }
 
       .keypad-confirm:disabled {
-        background: var(--color-locked);
-        color: var(--color-muted);
-        box-shadow: none;
+        background: var(--node-locked);
+        color: var(--text-dim);
+        border-color: transparent;
         cursor: not-allowed;
       }
 
       .keypad-skip {
-        background: var(--color-secondary);
+        border-color: var(--glow-amber);
+        color: var(--glow-amber);
         font-size: 22px;
       }
 
       .demo-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.45);
+        background: rgba(4, 7, 20, 0.78);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -2945,14 +3316,16 @@ git commit -m "feat: 限时挑战关"
       .demo-card {
         width: 100%;
         max-width: 480px;
-        padding: 24px;
-        border-radius: var(--radius-card);
-        background: var(--color-surface);
+        padding: 26px;
+        border-radius: var(--radius-panel);
+        border: 2px solid var(--glow-cyan);
+        background: var(--space-mid);
+        box-shadow: var(--glow-strong);
         text-align: center;
       }
 
       .demo-title {
-        margin: 0 0 12px;
+        margin: 0 0 14px;
         font-size: 22px;
         font-weight: 700;
       }
@@ -2969,7 +3342,7 @@ git commit -m "feat: 限时挑战关"
       .demo-steps li {
         font-size: 30px;
         font-weight: 700;
-        color: var(--color-primary-dark);
+        color: var(--glow-cyan);
         animation: step-in 0.35s ease both;
       }
 
@@ -2980,20 +3353,21 @@ git commit -m "feat: 限时挑战关"
 
       .result-stars {
         margin: 0;
-        font-size: 48px;
+        font-size: 52px;
+        line-height: 1.1;
       }
 
       .result-summary {
         margin: 0;
         font-size: 20px;
-        color: var(--color-muted);
+        color: var(--text-dim);
       }
 
       .result-wrong-review {
         margin: 0;
         font-size: 18px;
-        line-height: 1.6;
-        color: var(--color-primary-dark);
+        line-height: 1.7;
+        color: var(--glow-amber);
         text-align: center;
       }
 
@@ -3004,49 +3378,229 @@ git commit -m "feat: 限时挑战关"
         justify-content: center;
       }
 
-      .primary-button,
-      .secondary-button,
-      .ghost-button {
-        min-height: var(--touch-target);
-        padding: 0 24px;
-        border: none;
-        border-radius: var(--radius-button);
-        font-family: inherit;
+      .spark-burst {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: visible;
+      }
+
+      .spark {
+        position: absolute;
+        left: 50%;
+        top: 50%;
         font-size: 22px;
-        font-weight: 700;
-        cursor: pointer;
+        animation: spark-fly 0.7s ease-out both;
       }
 
-      .primary-button {
-        background: var(--color-primary);
-        color: #ffffff;
-        box-shadow: var(--shadow-button);
+      @keyframes spark-fly {
+        from {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(0.4);
+        }
+        to {
+          opacity: 0;
+          transform: translate(calc(-50% + var(--spark-x)), calc(-50% + var(--spark-y))) scale(1.2);
+        }
       }
 
-      .secondary-button {
-        background: var(--color-secondary);
-        color: #ffffff;
-        box-shadow: var(--shadow-button);
+      .level-complete-glow {
+        animation: level-glow 0.9s ease-out both;
       }
 
-      .ghost-button {
-        background: transparent;
-        color: var(--color-muted);
+      @keyframes level-glow {
+        0% { box-shadow: 0 0 0 rgba(94, 234, 212, 0); }
+        40% { box-shadow: 0 0 42px rgba(94, 234, 212, 0.9); }
+        100% { box-shadow: 0 0 0 rgba(94, 234, 212, 0); }
       }
+```
 
-      @media (max-width: 480px) {
+- [ ] **Step 2: 追加特效钩子**
+
+把下面代码插到 `<script id="game-ui">` 内、`flashQuestion` 之后。
+
+```js
+    const SPARK_BURST_CLASS = 'spark-burst';
+    const SPARK_CLASS = 'spark';
+    const SPARK_COUNT = 8;
+    const SPARK_ICONS = ['✨', '⭐', '🌟', '💫'];
+    const SPARK_LIFETIME_MS = 750;
+    const SPARK_RADIUS_PX = 110;
+    const LEVEL_COMPLETE_GLOW_CLASS = 'level-complete-glow';
+    const LEVEL_COMPLETE_GLOW_MS = 900;
+
+    function spawnSparkBurst() {
+      const area = elementById('question-area');
+      const burst = document.createElement('div');
+      burst.className = SPARK_BURST_CLASS;
+      for (let index = 0; index < SPARK_COUNT; index += 1) {
+        const angle = (Math.PI * 2 * index) / SPARK_COUNT;
+        const spark = document.createElement('span');
+        spark.className = SPARK_CLASS;
+        spark.textContent = SPARK_ICONS[index % SPARK_ICONS.length];
+        spark.style.setProperty('--spark-x', `${Math.cos(angle) * SPARK_RADIUS_PX}px`);
+        spark.style.setProperty('--spark-y', `${Math.sin(angle) * SPARK_RADIUS_PX}px`);
+        burst.appendChild(spark);
+      }
+      area.appendChild(burst);
+      window.setTimeout(() => burst.remove(), SPARK_LIFETIME_MS);
+    }
+
+    function renderLevelCompleteGlow() {
+      const area = elementById('question-area');
+      area.classList.add(LEVEL_COMPLETE_GLOW_CLASS);
+      window.setTimeout(() => area.classList.remove(LEVEL_COMPLETE_GLOW_CLASS), LEVEL_COMPLETE_GLOW_MS);
+    }
+```
+
+- [ ] **Step 3: 接线答对特效与过关特效**
+
+1. 在 `handleCorrectAnswer` 内，把
+```js
+      flashQuestion(FEEDBACK_CLASS_CORRECT);
+      scheduleNextQuestion(FEEDBACK_DELAY_MS);
+```
+改成
+```js
+      flashQuestion(FEEDBACK_CLASS_CORRECT);
+      spawnSparkBurst();
+      scheduleNextQuestion(FEEDBACK_DELAY_MS);
+```
+
+2. 在 `finishStandardLevel` 内，把
+```js
+      renderResult(levelId, stars, isPassed, total);
+      showScreen(SCREEN_RESULT);
+```
+改成
+```js
+      renderResult(levelId, stars, isPassed, total);
+      if (isPassed) {
+        renderLevelCompleteGlow();
+      }
+      showScreen(SCREEN_RESULT);
+```
+
+- [ ] **Step 4: 在 `prefers-reduced-motion` 块里关闭位移与缩放动画**
+
+把 `<style>` 末尾的 `@media (prefers-reduced-motion: reduce)` 块替换为：
+
+```css
+      @media (prefers-reduced-motion: reduce) {
+        .star-node.is-current .star-node-button,
+        .question-text.is-wrong,
+        .demo-steps li,
+        .level-complete-glow {
+          animation: none;
+        }
+
+        .spark-burst {
+          display: none;
+        }
+
+        .question-area.is-weak-hint {
+          transform: none;
+        }
+
+        .keypad-button:active:not(:disabled),
+        .star-node-button:active:not(:disabled) {
+          transform: none;
+        }
+      }
+```
+
+- [ ] **Step 5: 手工验证**
+
+Run: 浏览器打开 `index.html`，进第 1 关答一关。
+Expected:
+- 答题页深空配色，题目区带发光边框，数字键盘大而好点。
+- 答对：题目变青色发光，题目区中心炸开一圈 ✨⭐🌟💫 星光，然后进下一题。
+- 答错：题目红色抖动，弹出演示卡（青色发光描边），点「继续」进下一题。
+- 连击 ≥ 3：右上角琥珀色「连击 ×N」。
+- 卡住 15 秒题目轻微放大、个位数字变琥珀色；30 秒个位被琥珀色圆圈圈住并出现提示文案。
+- 过关：题目区闪一下薄荷色光，结算页显示星星。
+- 打开系统「减少动态效果」后刷新：不再有星光炸开、不再抖动、节点不脉动。
+- 控制台无报错。
+
+- [ ] **Step 6: 运行测试**
+
+Run: `npm test`
+Expected: PASS（51/51）
+
+- [ ] **Step 7: 提交**
+
+```bash
+git add index.html
+git commit -m "feat: 答题与结算界面视觉及动效"
+```
+
+---
+
+## Task 12: 响应式布局与端到端验收
+
+**Files:**
+- Modify: `index.html`（`<style>` 分区追加响应式规则）
+
+**Interfaces:**
+- Consumes: 前面所有任务的标记与令牌
+- Produces: 无新接口
+
+- [ ] **Step 1: 追加响应式规则**
+
+把下面 CSS 追加到 `<style>` 分区末尾（`@media (prefers-reduced-motion: reduce)` 块之后）。
+
+```css
+      @media (max-width: 520px) {
         :root {
           --question-font-size: 48px;
           --keypad-font-size: 26px;
           --touch-target: 56px;
         }
 
-        .screen-title {
+        body {
+          padding: 12px;
+        }
+
+        .app-title {
           font-size: 26px;
         }
 
-        .level-map {
-          grid-template-columns: 1fr;
+        .app-subtitle {
+          font-size: 15px;
+        }
+
+        .star-node-button {
+          width: 52px;
+          height: 52px;
+          font-size: 22px;
+        }
+
+        .star-node + .star-node::before {
+          top: 26px;
+          left: -16px;
+          width: 28px;
+        }
+
+        .star-node-number {
+          top: 54px;
+        }
+
+        .level-detail-heading {
+          font-size: 19px;
+        }
+
+        .level-detail-stars {
+          font-size: 26px;
+        }
+
+        .answer-display {
+          font-size: 38px;
+        }
+      }
+
+      @media (min-width: 900px) and (orientation: landscape) {
+        :root {
+          --question-font-size: 64px;
         }
       }
 ```
@@ -3055,25 +3609,27 @@ git commit -m "feat: 限时挑战关"
 
 Run: 双击 `index.html`（Chrome 或 Edge）。
 逐项确认：
-- [ ] 无控制台报错，Network 面板**没有任何请求**。
-- [ ] 关卡地图 10 张卡片；未解锁的显示 🔒 且不可点。
+- [ ] 无控制台报错，Network 面板**没有任何请求**（单文件、零依赖）。
+- [ ] 星图显示 10 个节点；未解锁的暗色锁定且不可点；当前关琥珀色高亮。
 - [ ] 第 1–9 关都能出题；同一关内不出现重复题目。
 - [ ] 答案永远不为 0；首位点 `0` 无反应；输满两位后再点数字无反应。
 - [ ] 答错时演示的每一步算式与正确答案一致（抽查第 4、5、6、7、8 关各一题）。
 - [ ] 第 7 关的演示有 3 步（如 `42 − 20 = 22` → `22 − 2 = 20` → `20 − 5 = 15`）。
+- [ ] 第 2 关的 `45 − 10` 演示是数位分解（`个位：5 − 0 = 5` …），**不是**平十法或破十法。
 - [ ] 第 8 关 `100 − 37` 的演示有 3 步（`100 − 30 = 70` → `10 − 7 = 3` → `60 + 3 = 63`）。
-- [ ] 达到 80% 正确率后下一关解锁；不到 80% 不解锁。
+- [ ] 达到 80% 正确率后下一关解锁，星图节点点亮；不到 80% 不解锁。
 - [ ] 刷新后星星、最高分、静音状态都还在。
 - [ ] 屏幕键盘与物理键盘都能完成一关。
 - [ ] 首次答对**能听到声音**。
-- [ ] 弱提示 15 秒出现（题目放大、个位变色），强提示 30 秒出现（虚线框 + 文案），提示不含答案。
+- [ ] 弱提示 15 秒、强提示 30 秒按 spec §5.2 触发；提示不含答案。
 - [ ] 第 10 关：60 秒倒计时、跳过按钮、答错不弹演示、结束显示最高纪录。
+- [ ] 把窗口拉窄到手机宽度，布局不溢出、按钮仍可点。
 
 - [ ] **Step 3: 在安卓平板上跑一遍分发验收（spec §9.2）**
 
 把 `index.html` 传到安卓平板（微信/数据线/网盘均可），用文件管理器选 Chrome 打开，或在 Chrome 地址栏输入 `file://` 路径。
 逐项确认：
-- [ ] 文件能打开，页面正常显示（**这一步是重点**——安卓上不是双击，需要选择打开方式）。
+- [ ] 文件能打开，星图与答题页正常显示（**这一步是重点** —— 安卓上不是双击，需要选择打开方式）。
 - [ ] 能玩完整一关，触屏按钮点得准、不误触。
 - [ ] 答对**能听到声音**（触屏的第一次点击应当已经 resume 了 `AudioContext`）。
 - [ ] 通关后刷新页面，星星还在（验证 `file://` 下 `localStorage` 可读写）。
@@ -3084,18 +3640,18 @@ Run: 双击 `index.html`（Chrome 或 Edge）。
 - [ ] **Step 4: 运行全部测试**
 
 Run: `npm test`
-Expected: PASS（三个测试文件全部通过）
+Expected: PASS（51/51）
 
 - [ ] **Step 5: 提交**
 
 ```bash
 git add index.html
-git commit -m "feat: 响应式样式与视觉打磨"
+git commit -m "feat: 响应式布局"
 ```
 
 - [ ] **Step 6: 收尾**
 
-实现与测试都完成后，按 `~/.claude/CLAUDE.md` 的「代码修改收尾」一节，在**提交前**跑一次 `/simplify`（本次 diff 含 `.cs` 之外的源代码改动，`reviewing-dotnet-idioms` 不适用——这不是 .NET 项目）。修完再跑一次 `npm test`，然后提交。
+实现与测试都完成后，按 `~/.claude/CLAUDE.md` 的「代码修改收尾」一节，在**提交前**跑一次 `/simplify`（本次 diff 含 `.cs` 之外的源代码改动，`reviewing-dotnet-idioms` 不适用 —— 这不是 .NET 项目）。修完再跑一次 `npm test`，然后提交。
 
 ---
 
@@ -3108,4 +3664,4 @@ git commit -m "feat: 响应式样式与视觉打磨"
 3. 演示正确性由 `npm test` 的全量自检保证，不依赖人工抽查。
 4. 弱提示 15 秒 / 强提示 30 秒，且从不给答案。
 5. 首次答对能听到音效。
-
+6. 界面是太空闯关主题：深空配色、星图关卡地图、答对星光炸开、过关星球点亮，且尊重 `prefers-reduced-motion`。
