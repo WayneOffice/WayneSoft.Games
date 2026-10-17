@@ -27,6 +27,19 @@ function lastStepResult(steps) {
   return parseStep(steps[steps.length - 1]).result;
 }
 
+// The level rules are the oracle here, and they are read straight off each
+// level's own collection rule rather than through needsBorrowing: levels 1-3
+// collect pairs with `a % 10 >= b % 10` (level 2 trivially, since its
+// subtrahend is always a multiple of ten), so they never borrow; levels 4-8
+// collect pairs with `a % 10 < b % 10`, so they always do. The ones digits are
+// computed inline on purpose: a sweep scoped by needsBorrowing cannot falsify
+// needsBorrowing, because a wrong predicate would silently redefine its own
+// passing scope.
+const NON_BORROWING_LEVEL_IDS = [1, 2, 3];
+const BORROWING_LEVEL_IDS = [4, 5, 6, 7, 8];
+const ALL_LEVEL_IDS = [...NON_BORROWING_LEVEL_IDS, ...BORROWING_LEVEL_IDS];
+const DECIMAL_BASE = 10;
+
 test('the demo for 45 - 3 breaks the numbers into place values', () => {
   const demo = logic.buildDemoSteps(45, 3);
   assert.deepEqual(hostRealm(demo.steps), ['个位：5 − 3 = 2', '合起来：40 + 2 = 42']);
@@ -76,7 +89,7 @@ test('the demo for 100 - 37 nests a break-ten step', () => {
 });
 
 test('no demo step ever contains a negative operand', () => {
-  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
+  for (const levelId of ALL_LEVEL_IDS) {
     for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
       for (const step of logic.buildDemoSteps(a, b).steps) {
         assert.ok(
@@ -89,7 +102,7 @@ test('no demo step ever contains a negative operand', () => {
 });
 
 test('every demo step is arithmetically true and lands on the correct difference', () => {
-  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
+  for (const levelId of ALL_LEVEL_IDS) {
     for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
       const demo = logic.buildDemoSteps(a, b);
       assert.equal(demo.result, a - b, `wrong result for ${a} - ${b}`);
@@ -106,8 +119,14 @@ test('every demo step is arithmetically true and lands on the correct difference
   }
 });
 
-test('every level 4 to 8 demo mentions a ten being broken, so the promise holds', () => {
-  for (const levelId of [4, 5, 6, 7, 8]) {
+// The assertion is deliberately only "the borrow is not collapsed into a single
+// step": which step carries the borrow differs by strategy (break-ten leads
+// with `10 − b`, flatten-ten strips the ones first, split-subtrahend nests a
+// whole second demo), so there is no single shape to assert. The stronger
+// property — that a borrowing demo never opens with the place-value step — is
+// covered by the sweep below.
+test('every level 4 to 8 demo spends at least two steps on the borrow', () => {
+  for (const levelId of BORROWING_LEVEL_IDS) {
     for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
       const demo = logic.buildDemoSteps(a, b);
       assert.ok(
@@ -119,7 +138,7 @@ test('every level 4 to 8 demo mentions a ten being broken, so the promise holds'
 });
 
 test('a problem that needs no borrowing is always explained by place value', () => {
-  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
+  for (const levelId of ALL_LEVEL_IDS) {
     for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
       if (logic.needsBorrowing(a, b)) {
         continue;
@@ -138,18 +157,6 @@ test('the demo for 45 - 10 subtracts a whole ten, not a borrowed one', () => {
   assert.deepEqual(hostRealm(demo.steps), ['个位：5 − 0 = 5', '十位：4 − 1 = 3', '合起来：30 + 5 = 35']);
   assert.equal(demo.result, 35);
 });
-
-// The level rules are the oracle here, and they are read straight off each
-// level's own collection rule rather than through needsBorrowing: levels 1-3
-// collect pairs with `a % 10 >= b % 10` (level 2 trivially, since its
-// subtrahend is always a multiple of ten), so they never borrow; levels 4-8
-// collect pairs with `a % 10 < b % 10`, so they always do. The ones digits are
-// computed inline on purpose: a sweep scoped by needsBorrowing cannot falsify
-// needsBorrowing, because a wrong predicate would silently redefine its own
-// passing scope.
-const NON_BORROWING_LEVEL_IDS = [1, 2, 3];
-const BORROWING_LEVEL_IDS = [4, 5, 6, 7, 8];
-const DECIMAL_BASE = 10;
 
 test('the level rules, not the predicate, decide whether a demo borrows', () => {
   for (const levelId of NON_BORROWING_LEVEL_IDS) {

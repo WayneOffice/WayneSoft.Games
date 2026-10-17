@@ -38,6 +38,8 @@
         --keypad-font-size: 32px;
         --glow-soft: 0 0 18px rgb(var(--glow-cyan-rgb) / 0.45);
         --glow-strong: 0 0 28px rgb(var(--glow-violet-rgb) / 0.65);
+        --gradient-primary: linear-gradient(160deg, var(--glow-violet), var(--glow-cyan));
+        --on-glow-text: #0a0f26;
       }
 
       * {
@@ -131,7 +133,7 @@
       }
 
       .star-node {
-        width: 64px;
+        width: var(--touch-target);
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -277,8 +279,8 @@
       }
 
       .primary-button {
-        background: linear-gradient(160deg, var(--glow-violet), var(--glow-cyan));
-        color: #0a0f26;
+        background: var(--gradient-primary);
+        color: var(--on-glow-text);
         box-shadow: var(--glow-soft);
       }
 
@@ -449,8 +451,8 @@
       }
 
       .keypad-confirm {
-        background: linear-gradient(160deg, var(--glow-violet), var(--glow-cyan));
-        color: #0a0f26;
+        background: var(--gradient-primary);
+        color: var(--on-glow-text);
         border-color: transparent;
       }
 
@@ -620,6 +622,59 @@
         .keypad-button:active:not(:disabled),
         .star-node-button:active:not(:disabled) {
           transform: none;
+        }
+      }
+
+      @media (max-width: 520px) {
+        :root {
+          /* --touch-target is deliberately NOT lowered here. Spec §7 sets a
+             hard ≥64px floor for a finger on a tablet, and shrinking it on
+             the narrowest viewports would break the requirement exactly
+             where the child is most likely to mis-tap. */
+          --question-font-size: 48px;
+          --keypad-font-size: 26px;
+        }
+
+        body {
+          padding: 12px;
+        }
+
+        .app-title {
+          font-size: 26px;
+        }
+
+        .app-subtitle {
+          font-size: 15px;
+        }
+
+        /* .star-node-button is deliberately NOT shrunk here. It is sized by
+           var(--touch-target), and spec §7 sets a hard ≥64px floor for a
+           finger on a tablet — the narrowest viewport is exactly where a
+           child is most likely to mis-tap, so shrinking there is backwards.
+           The map scrolls horizontally instead.
+
+           For the same reason the connector geometry and the node number are
+           NOT overridden either: Task 10 tuned them to a 64px node
+           (`top: 31px; left: -28px`), and the number is a normal flow child,
+           not an absolutely positioned one. Narrowing anything here would put
+           the connector back to overlapping the planet. */
+
+        .level-detail-heading {
+          font-size: 19px;
+        }
+
+        .level-detail-stars {
+          font-size: 26px;
+        }
+
+        .answer-display {
+          font-size: 38px;
+        }
+      }
+
+      @media (min-width: 900px) and (orientation: landscape) {
+        :root {
+          --question-font-size: 64px;
         }
       }
   </style>
@@ -1102,13 +1157,17 @@
         && starCount <= MAX_STARS;
     }
 
-    function sanitizeLevelStars(value) {
+    function sanitizeRecord(value, isValidEntry) {
       if (!isPlainObject(value)) {
         return {};
       }
       return Object.fromEntries(
-        Object.entries(value).filter(([, starCount]) => isValidLevelStars(starCount)),
+        Object.entries(value).filter(([, entry]) => isValidEntry(entry)),
       );
+    }
+
+    function sanitizeLevelStars(value) {
+      return sanitizeRecord(value, isValidLevelStars);
     }
 
     // The best score is the most questions ever answered correctly in a run, so
@@ -1118,12 +1177,7 @@
     }
 
     function sanitizeLevelBestScore(value) {
-      if (!isPlainObject(value)) {
-        return {};
-      }
-      return Object.fromEntries(
-        Object.entries(value).filter(([, bestScore]) => isValidBestScore(bestScore)),
-      );
+      return sanitizeRecord(value, isValidBestScore);
     }
 
     function parseProgress(rawValue) {
@@ -1306,15 +1360,40 @@
     const STAR_MAP_STATE_JUST_CLEARED = 'is-just-cleared';
     const LOCKED_ICON = '🔒';
     const CHALLENGE_BEST_SCORE_TEMPLATE = '最高 {score} 题';
+    const CHALLENGE_UNPLAYED_TEXT = '60 秒内答对越多越好';
+
+    // A level that was never played has no entry in either map, and the stored
+    // keys are strings because they come back from JSON.
+    function starsFor(levelId) {
+      return gameState.progress.levelStars[String(levelId)] || 0;
+    }
+
+    function bestScoreFor(levelId) {
+      return gameState.progress.levelBestScore[String(levelId)] || 0;
+    }
+
+    // The timed challenge never earns stars (spec §3.2), so it reports its best
+    // score instead. The map badge and the detail card both read their progress
+    // text from here, so the two can never drift apart.
+    function levelProgressText(levelId) {
+      if (levelId !== TIMED_CHALLENGE_LEVEL_ID) {
+        return formatStars(starsFor(levelId));
+      }
+      const bestScore = bestScoreFor(levelId);
+      if (bestScore === 0) {
+        return CHALLENGE_UNPLAYED_TEXT;
+      }
+      return CHALLENGE_BEST_SCORE_TEMPLATE.replace('{score}', String(bestScore));
+    }
 
     // The timed challenge never earns stars (spec §3.2), so its "played" state
     // has to come from the best score instead — judged on stars alone its node
     // would pulse as "current" forever, however many times the child ran it.
     function isLevelCleared(levelId) {
       if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
-        return (gameState.progress.levelBestScore[String(levelId)] || 0) > 0;
+        return bestScoreFor(levelId) > 0;
       }
-      return (gameState.progress.levelStars[String(levelId)] || 0) > 0;
+      return starsFor(levelId) > 0;
     }
 
     function levelState(levelId) {
@@ -1351,7 +1430,6 @@
       button.addEventListener('click', () => selectLevel(levelId));
 
       const icon = document.createElement('span');
-      icon.className = 'star-node-icon';
       icon.textContent = isUnlocked ? PLANET_ICONS[levelId - 1] : LOCKED_ICON;
       button.appendChild(icon);
       item.appendChild(button);
@@ -1364,12 +1442,7 @@
       if (isLevelCleared(levelId)) {
         const badge = document.createElement('span');
         badge.className = 'star-node-stars';
-        badge.textContent = levelId === TIMED_CHALLENGE_LEVEL_ID
-          ? CHALLENGE_BEST_SCORE_TEMPLATE.replace(
-            '{score}',
-            String(gameState.progress.levelBestScore[String(levelId)] || 0),
-          )
-          : formatStars(gameState.progress.levelStars[String(levelId)] || 0);
+        badge.textContent = levelProgressText(levelId);
         item.appendChild(badge);
       }
       return item;
@@ -1417,12 +1490,7 @@
 
       const stars = document.createElement('p');
       stars.className = 'level-detail-stars';
-      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
-        const bestScore = gameState.progress.levelBestScore[String(levelId)] || 0;
-        stars.textContent = bestScore > 0 ? `最高 ${bestScore} 题` : '60 秒内答对越多越好';
-      } else {
-        stars.textContent = formatStars(gameState.progress.levelStars[String(levelId)] || 0);
-      }
+      stars.textContent = levelProgressText(levelId);
       fragment.appendChild(stars);
 
       const action = document.createElement('button');
@@ -1538,7 +1606,9 @@
       const lastIndex = digits.length - 1;
       return digits.map((digit, index) => {
         const span = document.createElement('span');
-        span.className = index === lastIndex ? `digit ${ONES_DIGIT_CLASS}` : 'digit';
+        if (index === lastIndex) {
+          span.className = ONES_DIGIT_CLASS;
+        }
         span.textContent = digit;
         return span;
       });
@@ -1586,10 +1656,12 @@
       }
     }
 
+    // extraClass names the one modifier the button needs, if any; the digit and
+    // backspace keys carry no modifier and style purely off .keypad-button.
     function buildKeypadButton(label, extraClass, onPress) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = `keypad-button ${extraClass}`;
+      button.className = extraClass === '' ? 'keypad-button' : `keypad-button ${extraClass}`;
       button.textContent = label;
       button.addEventListener('click', onPress);
       return button;
@@ -1610,10 +1682,10 @@
       keypad.replaceChildren();
       for (const digit of KEYPAD_DIGITS) {
         keypad.appendChild(
-          buildKeypadButton(String(digit), 'keypad-digit', () => handleDigitInput(digit)),
+          buildKeypadButton(String(digit), '', () => handleDigitInput(digit)),
         );
       }
-      keypad.appendChild(buildKeypadButton('⌫', 'keypad-backspace', handleBackspace));
+      keypad.appendChild(buildKeypadButton('⌫', '', handleBackspace));
       confirmButton = buildKeypadButton('确定', 'keypad-confirm', submitAnswer);
       keypad.appendChild(confirmButton);
       if (isTimedChallenge()) {
@@ -1803,7 +1875,7 @@
     function finishTimedChallenge() {
       recordChallengeScore(gameState.progress, TIMED_CHALLENGE_LEVEL_ID, gameState.correctCount);
       saveProgress(gameState.progress);
-      const bestScore = gameState.progress.levelBestScore[String(TIMED_CHALLENGE_LEVEL_ID)] || 0;
+      const bestScore = bestScoreFor(TIMED_CHALLENGE_LEVEL_ID);
       elementById('result-heading').textContent = CHALLENGE_HEADING;
       elementById('result-stars').textContent = '';
       elementById('result-summary').textContent =
