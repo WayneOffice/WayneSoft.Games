@@ -138,3 +138,44 @@ test('the demo for 45 - 10 subtracts a whole ten, not a borrowed one', () => {
   assert.deepEqual(hostRealm(demo.steps), ['个位：5 − 0 = 5', '十位：4 − 1 = 3', '合起来：30 + 5 = 35']);
   assert.equal(demo.result, 35);
 });
+
+// The level rules are the oracle here, and they are read straight off each
+// level's own collection rule rather than through needsBorrowing: levels 1-3
+// collect pairs with `a % 10 >= b % 10` (level 2 trivially, since its
+// subtrahend is always a multiple of ten), so they never borrow; levels 4-8
+// collect pairs with `a % 10 < b % 10`, so they always do. The ones digits are
+// computed inline on purpose: a sweep scoped by needsBorrowing cannot falsify
+// needsBorrowing, because a wrong predicate would silently redefine its own
+// passing scope.
+const NON_BORROWING_LEVEL_IDS = [1, 2, 3];
+const BORROWING_LEVEL_IDS = [4, 5, 6, 7, 8];
+const DECIMAL_BASE = 10;
+
+test('the level rules, not the predicate, decide whether a demo borrows', () => {
+  for (const levelId of NON_BORROWING_LEVEL_IDS) {
+    for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
+      assert.ok(
+        a % DECIMAL_BASE >= b % DECIMAL_BASE,
+        `level ${levelId} is supposed not to borrow, but ${a} - ${b} breaks that rule`,
+      );
+      const firstStep = logic.buildDemoSteps(a, b).steps[0];
+      assert.ok(
+        firstStep.startsWith('个位：'),
+        `level ${levelId} never borrows, but the ${a} - ${b} demo does: ${firstStep}`,
+      );
+    }
+  }
+  for (const levelId of BORROWING_LEVEL_IDS) {
+    for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
+      assert.ok(
+        a % DECIMAL_BASE < b % DECIMAL_BASE,
+        `level ${levelId} is supposed to borrow, but ${a} - ${b} breaks that rule`,
+      );
+      const firstStep = logic.buildDemoSteps(a, b).steps[0];
+      assert.ok(
+        !firstStep.startsWith('个位：'),
+        `level ${levelId} always borrows, but the ${a} - ${b} demo does not: ${firstStep}`,
+      );
+    }
+  }
+});
