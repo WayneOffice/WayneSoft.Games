@@ -47,10 +47,12 @@ test('only level 1 is unlocked on a fresh profile', () => {
   assert.equal(logic.isLevelUnlocked(progress, 10), false);
 });
 
-test('clearing a level unlocks the next one, including the timed challenge', () => {
+test('clearing a level unlocks the next one', () => {
   const progress = logic.createInitialProgress();
   logic.recordLevelResult(progress, 9, 15, 15);
   assert.equal(logic.isLevelUnlocked(progress, 10), true);
+  logic.recordLevelResult(progress, 12, 15, 15);
+  assert.equal(logic.isLevelUnlocked(progress, logic.TIMED_CHALLENGE_LEVEL_ID), true);
 });
 
 test('a failed level does not unlock the next one', () => {
@@ -132,6 +134,18 @@ test('progress survives a serialize and parse round trip', () => {
   assert.deepEqual(logic.parseProgress(logic.serializeProgress(progress)), progress);
 });
 
+test('a saved profile is a byte-level fixed point of parse then serialize', () => {
+  const progress = logic.createInitialProgress();
+  logic.recordLevelResult(progress, 3, 9, 10);
+  logic.recordChallengeScore(progress, logic.TIMED_CHALLENGE_LEVEL_ID, 7);
+  logic.mergeAnswerIntoProgress(progress, { a: 42, b: 7 }, false);
+  logic.mergeAnswerIntoProgress(progress, { a: 85, b: 27, c: 18, operator: '-' }, false);
+  progress.challengePlayed = true;
+  progress.isMuted = true;
+  const once = logic.serializeProgress(progress);
+  assert.equal(logic.serializeProgress(logic.parseProgress(once)), once);
+});
+
 test('a missing or corrupt saved value falls back to a fresh profile', () => {
   assert.deepEqual(logic.parseProgress(null), logic.createInitialProgress());
   assert.deepEqual(logic.parseProgress('{not json'), logic.createInitialProgress());
@@ -183,10 +197,10 @@ test('a profile built through recordLevelResult parses back unchanged', () => {
   assert.deepEqual(hostRealm(parsed), hostRealm(progress));
 });
 
-test('a leading zero is dropped because the answer is never zero', () => {
-  assert.equal(logic.appendDigit('', 0), '');
-  assert.equal(logic.appendDigit('', 7), '7');
-  assert.equal(logic.appendDigit('4', 0), '40');
+test('a leading zero is refused unless the question allows a zero answer', () => {
+  assert.equal(logic.appendDigit('', 0, false), '');
+  assert.equal(logic.appendDigit('', 7, false), '7');
+  assert.equal(logic.appendDigit('4', 0, false), '40');
 });
 
 test('the answer is capped at two digits', () => {
@@ -257,7 +271,8 @@ test('a v2 save is migrated by level content, not by number', () => {
   assert.equal(progress.levelStars['13'], undefined);
   assert.equal(progress.challengePlayed, true);
   assert.equal(progress.schemaVersion, logic.SAVE_SCHEMA_VERSION);
-  assert.equal(progress.levelStars['10'], undefined);
+  // v2's level 8 best score is carried over onto v3's level 9.
+  assert.equal(progress.levelBestScore['9'], 11);
 });
 
 test('migration runs exactly once', () => {

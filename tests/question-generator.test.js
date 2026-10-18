@@ -17,6 +17,8 @@ const LEVEL_RULES = {
   7: ({ a, b }) => a >= 21 && a <= 99 && a % 10 !== 0 && b >= 11 && b < a && a % 10 < b % 10,
   8: ({ a, b }) => a >= 30 && a <= 90 && a % 10 === 0 && b >= 11 && b < a && a % 10 < b % 10,
   9: ({ a, b }) => a === 100 && b >= 11 && b <= 99,
+  10: ({ a, b, c, operator }) => operator === '-' && a >= 50 && a <= 100 && b >= 11 && b <= 39 && c >= 11 && c <= 39 && a - b - c >= 0,
+  11: ({ a, b, c, operator }) => operator === '+' && a >= 20 && a <= 99 && b >= 11 && b <= 50 && b < a && c >= 11 && c <= 50 && a - b + c <= 99,
 };
 
 // The answer rule lives in the game, not here: a second copy in the test file
@@ -39,7 +41,7 @@ function classifyLevelType(question) {
   return undefined;
 }
 
-for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) {
   test(`level ${levelId} feasible pairs all satisfy the level rule`, () => {
     const pairs = logic.feasibleQuestionsForLevel(levelId);
     assert.ok(pairs.length > 0, `level ${levelId} must have feasible pairs`);
@@ -50,9 +52,15 @@ for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
 }
 
 test('every level has at least as many feasible pairs as questions it asks', () => {
-  // Level 9 is the mixed level: it has no pair set of its own, so it is
-  // excluded here.
-  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
+  // Level 12 is the mixed level: it draws from the other levels' sets and has
+  // no pair set of its own (feasibleQuestionsForLevel would throw for it), so
+  // it is the one level with a question count that is excluded here.
+  const coveredLevelIds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  const expectedLevelIds = Object.keys(logic.LEVEL_QUESTION_COUNTS)
+    .map(Number)
+    .filter((levelId) => levelId !== logic.MIXED_LEVEL_ID);
+  assert.deepEqual(coveredLevelIds, expectedLevelIds, 'the sweep must cover every level with a question count');
+  for (const levelId of coveredLevelIds) {
     const questionCount = logic.LEVEL_QUESTION_COUNTS[levelId];
     const pairs = logic.feasibleQuestionsForLevel(levelId);
     assert.ok(
@@ -62,10 +70,12 @@ test('every level has at least as many feasible pairs as questions it asks', () 
   }
 });
 
-test('the difference is never zero and never negative on any level', () => {
-  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
+test('the first subtraction never reaches zero or below on any level', () => {
+  // Levels 10 and 11 are two-step, so a − b is the running total after the
+  // first step rather than the answer (level 10 may legitimately answer 0).
+  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) {
     for (const { a, b } of logic.feasibleQuestionsForLevel(levelId)) {
-      assert.ok(a - b >= 1, `difference must be at least 1: ${a} - ${b}`);
+      assert.ok(a - b >= 1, `the first subtraction must stay above zero: ${a} - ${b}`);
     }
   }
 });
@@ -242,12 +252,25 @@ test('the new levels really cover their stated ranges', () => {
   assert.ok(level10.every((q) => q.b <= 39), 'level 10 subtrahend must not exceed 39');
   assert.ok(level10.every((q) => q.c <= 39), 'level 10 third operand must not exceed 39');
   assert.ok(level10.every((q) => q.a >= 50), 'level 10 minuend must be at least 50');
-  assert.equal(Math.max(...level10.map((q) => q.a)), 100, 'level 10 must reach a = 100');
+  assert.equal(
+    level10.reduce((highest, q) => Math.max(highest, q.a), 0),
+    100,
+    'level 10 must reach a = 100',
+  );
+  assert.ok(level10.every((q) => q.b >= 11), 'level 10 subtrahend floor is 11');
+  assert.ok(level10.every((q) => q.c >= 11), 'level 10 third-operand floor is 11');
+  assert.ok(level10.some((q) => q.b === 39), 'level 10 must reach b = 39');
+  assert.ok(level10.some((q) => q.c === 39), 'level 10 must reach c = 39');
+  assert.ok(level10.every((q) => q.operator === '-'));
 
   assert.ok(level11.every((q) => q.a <= 99), 'level 11 minuend must not exceed 99');
   assert.ok(level11.every((q) => q.b <= 50), 'level 11 subtrahend must not exceed 50');
   assert.ok(level11.every((q) => q.c <= 50), 'level 11 third operand must not exceed 50');
   assert.ok(level11.every((q) => q.a >= 20), 'level 11 minuend must be at least 20');
+  assert.ok(level11.every((q) => q.b >= 11), 'level 11 subtrahend floor is 11');
+  assert.ok(level11.every((q) => q.c >= 11), 'level 11 third-operand floor is 11');
+  assert.ok(level11.every((q) => q.b < q.a), 'level 11 subtrahend must be below the minuend');
+  assert.ok(level11.every((q) => q.operator === '+'));
 });
 
 test('the mixed levels draw all eleven question types', () => {

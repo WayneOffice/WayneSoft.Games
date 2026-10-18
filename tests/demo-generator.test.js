@@ -133,7 +133,7 @@ test('no demo step ever contains a negative operand', () => {
     for (const question of logic.feasibleQuestionsForLevel(levelId)) {
       for (const step of logic.buildDemoSteps(question).steps) {
         assert.ok(
-          !step.includes('− -') && !step.includes('+ -'),
+          !step.includes('− -') && !step.includes('+ -') && !step.includes('= -'),
           `negative operand in the ${question.a} - ${question.b} demo: ${step}`,
         );
       }
