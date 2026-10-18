@@ -625,7 +625,11 @@ Expected: FAIL —— `demo.steps[0].startsWith` 抛错，因为 `buildDemoSteps
     }
 ```
 
-- [ ] **Step 4: 运行测试，确认通过**
+- [ ] **Step 4: 把旧的调用改成新签名，再跑测试**
+
+`tests/demo-generator.test.js` 里所有 `logic.buildDemoSteps(<数字>, <数字>)` 必须改成 `logic.buildDemoSteps({ a: <数字>, b: <数字> })`——包括文件顶部的固定样例（`13 − 7`、`42 − 7`、`40 − 7`、`42 − 27`、`40 − 27`、`100 − 37`、`45 − 3`、`45 − 23`、`45 − 10`）。
+
+**这一步必须在下面的 PASS 之前完成**：新的 `buildDemoSteps` 只接受题目对象，传两个数字进去会得到 `NaN`，旧样例会全部失败。
 
 Run: `node --test tests/demo-generator.test.js`
 Expected: PASS
