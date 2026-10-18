@@ -1661,6 +1661,14 @@
       }
     }
 
+    // The output of this function must stay a fixed point of parseProgress:
+    // parseProgress(serializeProgress(p)) has to serialize back to exactly these
+    // bytes. loadProgress compares the canonical serialization against what is
+    // stored to decide whether to write back, so a top-level field added to one
+    // of these three places and not the others would make every save look stale
+    // — rewritten, and stripped of the new field, on every single load. The key
+    // set and their order in createInitialProgress, migrateProgress and
+    // parseProgress all have to agree with each other.
     function serializeProgress(progress) {
       return JSON.stringify(progress);
     }
@@ -2075,7 +2083,9 @@
         path.setAttribute('d', buildConnectorPath(hops[index - 1].rect, hops[index].rect, frameRect));
         path.setAttribute(
           'class',
-          isLevelCleared(hops[index].levelId) ? 'star-map-path is-cleared' : 'star-map-path',
+          // The source level decides: the road a child has already walked lights
+          // up, so the lit run ends at the frontier rather than one hop short.
+          isLevelCleared(hops[index - 1].levelId) ? 'star-map-path is-cleared' : 'star-map-path',
         );
         fragment.appendChild(path);
       }
