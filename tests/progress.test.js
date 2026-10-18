@@ -230,3 +230,84 @@ test('a level and the timed challenge share one best score', () => {
   logic.recordLevelResult(progress, 1, 4, 10);
   assert.equal(progress.levelBestScore['1'], 12);
 });
+
+test('a fresh profile carries schema version 3 and an unplayed challenge flag', () => {
+  const progress = logic.createInitialProgress();
+  assert.equal(progress.schemaVersion, logic.SAVE_SCHEMA_VERSION);
+  assert.equal(progress.challengePlayed, false);
+});
+
+test('a v2 save is migrated by level content, not by number', () => {
+  const legacy = JSON.stringify({
+    levelStars: { '1': 3, '8': 2, '9': 3 },
+    levelBestScore: { '1': 10, '8': 11, '9': 15, '10': 7 },
+    wrongAnswers: [],
+    isMuted: false,
+  });
+  const progress = logic.parseProgress(legacy);
+  // 1-7 unchanged; v2 level 8 covered round tens AND the 100 minuend.
+  assert.equal(progress.levelStars['1'], 3);
+  assert.equal(progress.levelStars['8'], 2);
+  assert.equal(progress.levelStars['9'], 2);
+  // v2's mixed level becomes v3's level 12.
+  assert.equal(progress.levelStars['12'], 3);
+  assert.equal(progress.levelBestScore['12'], 15);
+  // v2's timed challenge becomes v3's level 13, and never keeps stars.
+  assert.equal(progress.levelBestScore['13'], 7);
+  assert.equal(progress.levelStars['13'], undefined);
+  assert.equal(progress.challengePlayed, true);
+  assert.equal(progress.schemaVersion, logic.SAVE_SCHEMA_VERSION);
+  assert.equal(progress.levelStars['10'], undefined);
+});
+
+test('migration runs exactly once', () => {
+  const legacy = JSON.stringify({
+    levelStars: { '8': 2 },
+    levelBestScore: { '8': 9 },
+    wrongAnswers: [],
+    isMuted: false,
+  });
+  const once = logic.serializeProgress(logic.parseProgress(legacy));
+  const twice = logic.serializeProgress(logic.parseProgress(once));
+  assert.equal(twice, once);
+});
+
+test('a v3 save that cleared level 10 keeps level 10 after a reload', () => {
+  const fresh = logic.createInitialProgress();
+  logic.recordLevelResult(fresh, 10, 12, 12);
+  const reloaded = logic.parseProgress(logic.serializeProgress(fresh));
+  assert.equal(reloaded.levelStars['10'], 3);
+  assert.equal(reloaded.levelStars['13'], undefined);
+  assert.equal(reloaded.challengePlayed, false);
+});
+
+test('a multi-step wrong answer survives a round trip and keeps its shape', () => {
+  const progress = logic.createInitialProgress();
+  logic.mergeAnswerIntoProgress(progress, { a: 85, b: 27, c: 18, operator: '-' }, false);
+  logic.mergeAnswerIntoProgress(progress, { a: 45, b: 18, c: 27, operator: '+' }, false);
+  const reloaded = logic.parseProgress(logic.serializeProgress(progress));
+  assert.deepEqual(hostRealm(reloaded.wrongAnswers), [
+    { a: 85, b: 27, c: 18, operator: '-', count: 1 },
+    { a: 45, b: 18, c: 27, operator: '+', count: 1 },
+  ]);
+});
+
+test('malformed multi-step entries are dropped', () => {
+  const raw = JSON.stringify({
+    schemaVersion: logic.SAVE_SCHEMA_VERSION,
+    levelStars: {},
+    levelBestScore: {},
+    wrongAnswers: [
+      { a: 85, b: 27, operator: '-', count: 1 },
+      { a: 85, b: 27, c: 18, operator: '*', count: 1 },
+      { a: 50, b: 25, c: 30, operator: '-', count: 1 },
+      { a: 99, b: 11, c: 40, operator: '+', count: 1 },
+      { a: 85, b: 27, c: 18, operator: '-', count: 2 },
+    ],
+    isMuted: false,
+  });
+  const progress = logic.parseProgress(raw);
+  assert.deepEqual(hostRealm(progress.wrongAnswers), [
+    { a: 85, b: 27, c: 18, operator: '-', count: 2 },
+  ]);
+});

@@ -1291,6 +1291,16 @@
     // meaningless; anything below one is corrupt data.
     const MIN_EARNED_STARS = 1;
     const MAX_TRACKED_WRONG_ANSWERS = 50;
+    const SAVE_SCHEMA_VERSION = 3;
+    const LEGACY_STABLE_LEVEL_KEYS = ['1', '2', '3', '4', '5', '6', '7'];
+    const LEGACY_ROUND_TEN_KEY = '8';
+    const LEGACY_MIXED_KEY = '9';
+    const LEGACY_TIMED_KEY = '10';
+    const V3_ROUND_TEN_KEY = '8';
+    const V3_HUNDRED_KEY = '9';
+    const V3_MIXED_KEY = '12';
+    const V3_TIMED_KEY = '13';
+    const WRONG_ANSWER_OPERATORS = [CHAIN_OPERATOR, MIXED_OPERATOR];
     const PROGRESS_STORAGE_KEY = 'waynesoft.math.subtraction-game.progress.v1';
 
     function computeStars(correctCount, questionCount) {
@@ -1315,9 +1325,11 @@
 
     function createInitialProgress() {
       return {
+        schemaVersion: SAVE_SCHEMA_VERSION,
         levelStars: {},
         levelBestScore: {},
         wrongAnswers: [],
+        challengePlayed: false,
         isMuted: false,
       };
     }
@@ -1327,13 +1339,26 @@
     }
 
     function isValidWrongAnswer(entry) {
-      return isPlainObject(entry)
-        && Number.isInteger(entry.a)
-        && Number.isInteger(entry.b)
-        && entry.a > 0
-        && entry.b > 0
-        && entry.b < entry.a
-        && entry.a <= MAX_MINUEND_WITH_HUNDRED;
+      if (!isPlainObject(entry)
+        || !Number.isInteger(entry.a)
+        || !Number.isInteger(entry.b)
+        || entry.b <= 0
+        || entry.b >= entry.a
+        || entry.a > MAX_MINUEND_WITH_HUNDRED) {
+        return false;
+      }
+      if (entry.c === undefined) {
+        // An operator without a third operand is a half-written multi-step
+        // entry, not a single-step question.
+        return entry.operator === undefined;
+      }
+      if (!Number.isInteger(entry.c) || !WRONG_ANSWER_OPERATORS.includes(entry.operator)) {
+        return false;
+      }
+      if (entry.operator === CHAIN_OPERATOR) {
+        return entry.a - entry.b - entry.c >= 0;
+      }
+      return entry.a - entry.b + entry.c <= MAX_MINUEND;
     }
 
     // A hand-edited or half-written save can hold entries the game would then
@@ -1346,11 +1371,18 @@
       return value
         .filter(isValidWrongAnswer)
         .slice(-MAX_TRACKED_WRONG_ANSWERS)
-        .map((entry) => ({
-          a: entry.a,
-          b: entry.b,
-          count: Number.isInteger(entry.count) && entry.count > 0 ? entry.count : 1,
-        }));
+        .map((entry) => {
+          const kept = {
+            a: entry.a,
+            b: entry.b,
+            count: Number.isInteger(entry.count) && entry.count > 0 ? entry.count : 1,
+          };
+          if (entry.c !== undefined) {
+            kept.c = entry.c;
+            kept.operator = entry.operator;
+          }
+          return kept;
+        });
     }
 
     // A hand-edited or half-written save can hold a star count outside
@@ -1434,6 +1466,47 @@
       );
     }
 
+    function copyLevelValue(target, source, fromKey, toKey) {
+      if (Object.prototype.hasOwnProperty.call(source, fromKey)) {
+        target[toKey] = source[fromKey];
+      }
+    }
+
+    function migrateLevelRecord(record) {
+      const migrated = {};
+      for (const key of LEGACY_STABLE_LEVEL_KEYS) {
+        copyLevelValue(migrated, record, key, key);
+      }
+      // v2's level 8 was "round tens minus two-digit, including 100". v3 splits
+      // that into level 8 (no 100) and level 9 (100 only), so a v2 clear counts
+      // for both — the child practised both shapes.
+      copyLevelValue(migrated, record, LEGACY_ROUND_TEN_KEY, V3_ROUND_TEN_KEY);
+      copyLevelValue(migrated, record, LEGACY_ROUND_TEN_KEY, V3_HUNDRED_KEY);
+      // v2's level 9 was the mixed level; v3 moved it to 12.
+      copyLevelValue(migrated, record, LEGACY_MIXED_KEY, V3_MIXED_KEY);
+      // v2's level 10 was the timed challenge; v3 moved it to 13.
+      copyLevelValue(migrated, record, LEGACY_TIMED_KEY, V3_TIMED_KEY);
+      return migrated;
+    }
+
+    function migrateProgress(progress) {
+      if (progress.schemaVersion >= SAVE_SCHEMA_VERSION) {
+        return progress;
+      }
+      const migratedStars = migrateLevelRecord(progress.levelStars);
+      // The timed challenge never earns stars, so a legacy star entry there
+      // carries no meaning in v3.
+      delete migratedStars[V3_TIMED_KEY];
+      return {
+        schemaVersion: SAVE_SCHEMA_VERSION,
+        levelStars: migratedStars,
+        levelBestScore: migrateLevelRecord(progress.levelBestScore),
+        wrongAnswers: progress.wrongAnswers,
+        challengePlayed: (progress.levelBestScore[LEGACY_TIMED_KEY] || 0) > 0,
+        isMuted: progress.isMuted,
+      };
+    }
+
     function parseProgress(rawValue) {
       if (typeof rawValue !== 'string') {
         return createInitialProgress();
@@ -1444,12 +1517,14 @@
           return createInitialProgress();
         }
         logDiscardedProgress(parsed);
-        return {
+        return migrateProgress({
+          schemaVersion: Number.isInteger(parsed.schemaVersion) ? parsed.schemaVersion : 0,
           levelStars: sanitizeLevelStars(parsed.levelStars),
           levelBestScore: sanitizeLevelBestScore(parsed.levelBestScore),
           wrongAnswers: parseWrongAnswers(parsed.wrongAnswers),
+          challengePlayed: parsed.challengePlayed === true,
           isMuted: parsed.isMuted === true,
-        };
+        });
       } catch (error) {
         console.error('Failed to parse saved progress, starting fresh.', error);
         return createInitialProgress();
@@ -1465,6 +1540,15 @@
         return true;
       }
       return (progress.levelStars[String(levelId - 1)] || 0) > 0;
+    }
+
+    function buildWrongAnswerEntry(question) {
+      const entry = { a: question.a, b: question.b, count: 1 };
+      if (question.c !== undefined) {
+        entry.c = question.c;
+        entry.operator = question.operator;
+      }
+      return entry;
     }
 
     function mergeAnswerIntoProgress(progress, question, isCorrect) {
@@ -1487,7 +1571,7 @@
         existing.count += 1;
         return;
       }
-      progress.wrongAnswers.push({ a: question.a, b: question.b, count: 1 });
+      progress.wrongAnswers.push(buildWrongAnswerEntry(question));
       if (progress.wrongAnswers.length > MAX_TRACKED_WRONG_ANSWERS) {
         progress.wrongAnswers.shift();
       }
