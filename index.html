@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>100 以内减法闯关</title>
+  <title>星座减法闯关</title>
   <!-- Inline data URI, not a file: the game must stay a single self-contained
        document with zero network requests. Without it the browser asks for
-       /favicon.ico and logs a 404 on every load. -->
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%AA%90%3C/text%3E%3C/svg%3E">
+       /favicon.ico and logs a 404 on every load. The glyph is a classical
+       temple, matching the twelve-house theme. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%9B%3C/text%3E%3C/svg%3E">
   <style>
       :root {
         /* Colour channels are declared as rgb triples so every translucent
@@ -99,29 +100,80 @@
         font-size: 17px;
       }
 
-      .mute-toggle {
+      /* Shared geometry for the two fixed corner buttons; each variant only
+         sets its own offset, colour and glyph size. */
+      .corner-toggle {
         position: fixed;
-        /* viewport-fit=cover opts the page into the unsafe area, so the
-           button has to clear the notch / rounded corner itself. */
-        top: calc(12px + env(safe-area-inset-top, 0px));
         right: calc(12px + env(safe-area-inset-right, 0px));
         width: var(--touch-target);
         height: var(--touch-target);
         border: 2px solid var(--space-line);
         border-radius: 50%;
         background: var(--space-panel);
-        color: var(--text-bright);
-        font-size: 26px;
         cursor: pointer;
         z-index: 10;
+      }
+
+      .mute-toggle {
+        /* viewport-fit=cover opts the page into the unsafe area, so the
+           button has to clear the notch / rounded corner itself. */
+        top: calc(12px + env(safe-area-inset-top, 0px));
+        color: var(--text-bright);
+        font-size: 26px;
+      }
+
+      /* Sits under the mute button so a child's thumb never lands on the
+         reset by accident; the confirm dialog is the second safeguard. */
+      .reset-toggle {
+        top: calc(12px + env(safe-area-inset-top, 0px) + var(--touch-target) + 12px);
+        color: var(--text-dim);
+        font-size: 24px;
+      }
+
+      /* Doric columns framing the climb, drawn inline so the file stays
+         self-contained. Fixed and decorative: they never take a tap. */
+      .temple-column {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        width: 72px;
+        /* Pale marble, not tinted glass: amber at low opacity over the deep
+           background reads as a muddy brown slab instead of stone. */
+        fill: var(--text-bright);
+        opacity: 0.1;
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      .temple-column.is-left {
+        left: 0;
+      }
+
+      .temple-column.is-right {
+        right: 0;
+        transform: scaleX(-1);
+      }
+
+      /* Greek key under the title: a repeating square-wave, which is the
+         familiar shorthand for a meander at this size. */
+      .app-header::after {
+        content: "";
+        display: block;
+        height: 10px;
+        margin: 10px auto 0;
+        max-width: 260px;
+        opacity: 0.5;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='10' viewBox='0 0 24 10'%3E%3Cpath d='M0 8h6V2h6v6h6V2h6' fill='none' stroke='%23ffd166' stroke-width='2'/%3E%3C/svg%3E");
+        background-repeat: repeat-x;
+        background-position: center;
       }
 
       .star-map-scroll {
         width: 100%;
         max-height: 58vh;
         overflow-y: auto;
-        /* Top padding reserves room for the rocket, which sits at top: -22px
-           on the selected node; without it the Pope's rocket is clipped. */
+        /* Top padding reserves room for the current-level marker, which sits at top: -22px
+           on the selected node; without it the Pope's flame is clipped. */
         padding: 26px 4px 8px;
         /* Hide the native bar: on Windows it is a bright grey slab that fights
            the space theme, and on a tablet it is meaningless. The map still
@@ -174,9 +226,9 @@
         padding: 0;
         display: grid;
         grid-template-columns: 1fr;
-        /* 26px, not the rocket's own 22px offset: the emoji's ink starts inside
-           its line box and ship-bob lifts it another 4px, so at the bob peak a
-           22px gap lets the rocket touch the star badge of the row above. The
+        /* 26px, not the marker's own 22px offset: the emoji's ink starts inside
+           its line box and marker-bob lifts it another 4px, so at the bob peak a
+           22px gap lets the flame touch the star badge of the row above. The
            scroll container reserves this same 26px for the top row. */
         row-gap: 26px;
       }
@@ -225,14 +277,14 @@
         white-space: nowrap;
       }
 
-      .star-node-ship {
+      .star-node-marker {
         position: absolute;
         top: -22px;
         font-size: 20px;
-        animation: ship-bob 1.6s ease-in-out infinite;
+        animation: marker-bob 1.6s ease-in-out infinite;
       }
 
-      @keyframes ship-bob {
+      @keyframes marker-bob {
         0%, 100% { transform: translateY(0); }
         50% { transform: translateY(-4px); }
       }
@@ -693,7 +745,7 @@
       @media (prefers-reduced-motion: reduce) {
         .star-node.is-current .star-node-button,
         .star-node.is-just-cleared .star-node-button,
-        .star-node-ship,
+        .star-node-marker,
         .question-text.is-wrong,
         .demo-steps li {
           animation: none;
@@ -772,12 +824,37 @@
   </style>
 </head>
 <body>
-  <button id="mute-toggle" type="button" class="mute-toggle" aria-label="音效开关">🔊</button>
+  <div class="temple-backdrop" aria-hidden="true">
+    <svg width="0" height="0">
+      <defs>
+        <g id="temple-column-shape">
+          <rect x="14" y="0" width="68" height="18" />
+          <rect x="24" y="18" width="48" height="10" />
+          <rect x="30" y="28" width="36" height="544" />
+          <rect x="34" y="28" width="3" height="544" opacity="0.45" />
+          <rect x="43" y="28" width="3" height="544" opacity="0.45" />
+          <rect x="52" y="28" width="3" height="544" opacity="0.45" />
+          <rect x="61" y="28" width="3" height="544" opacity="0.45" />
+          <rect x="24" y="572" width="48" height="10" />
+          <rect x="14" y="582" width="68" height="18" />
+        </g>
+      </defs>
+    </svg>
+    <svg class="temple-column is-left" viewBox="0 0 96 600" preserveAspectRatio="none">
+      <use href="#temple-column-shape" />
+    </svg>
+    <svg class="temple-column is-right" viewBox="0 0 96 600" preserveAspectRatio="none">
+      <use href="#temple-column-shape" />
+    </svg>
+  </div>
+
+  <button id="mute-toggle" type="button" class="corner-toggle mute-toggle" aria-label="音效开关">🔊</button>
+  <button id="reset-progress" type="button" class="corner-toggle reset-toggle" aria-label="重新开始">⚙️</button>
 
   <main id="screen-map" class="screen">
     <header class="app-header">
-      <h1 class="app-title">🌌 减法星球</h1>
-      <p class="app-subtitle">沿着星图，一关一关往前闯</p>
+      <h1 class="app-title">🌌 星座减法闯关</h1>
+      <p class="app-subtitle">沿着山道，一关一关往上闯</p>
     </header>
     <div id="star-map-scroll" class="star-map-scroll">
       <div id="star-map-frame" class="star-map-frame">
@@ -1850,7 +1927,7 @@
       return STAR_FILLED.repeat(starCount) + STAR_EMPTY.repeat(MAX_STARS - starCount);
     }
 
-    const SHIP_ICON = '🚀';
+    const CURRENT_MARKER_ICON = '🔥';
     const STAR_MAP_STATE_CLEARED = 'is-cleared';
     const STAR_MAP_STATE_CURRENT = 'is-current';
     const STAR_MAP_STATE_LOCKED = 'is-locked';
@@ -1977,10 +2054,10 @@
       }
 
       if (levelId === gameState.selectedLevelId) {
-        const ship = document.createElement('span');
-        ship.className = 'star-node-ship';
-        ship.textContent = SHIP_ICON;
-        item.appendChild(ship);
+        const marker = document.createElement('span');
+        marker.className = 'star-node-marker';
+        marker.textContent = CURRENT_MARKER_ICON;
+        item.appendChild(marker);
       }
 
       item.appendChild(buildStarNodeButton(levelId, isUnlocked));
@@ -2827,10 +2904,28 @@
       }
     }
 
+    const RESET_CONFIRM_TEXT = '重新开始？所有星星、最高纪录和错题本都会清空。';
+
+    // The confirm is the real guard: the button sits under the mute toggle so a
+    // thumb is unlikely to find it, and nothing is cleared until the child or
+    // parent answers the dialog.
+    function resetProgress() {
+      if (!window.confirm(RESET_CONFIRM_TEXT)) {
+        return;
+      }
+      try {
+        window.localStorage.removeItem(PROGRESS_STORAGE_KEY);
+      } catch (error) {
+        console.error('Failed to clear the saved progress.', error);
+      }
+      window.location.reload();
+    }
+
     function initGame() {
       gameState.progress = loadProgress();
       renderMuteToggle();
       elementById('mute-toggle').addEventListener('click', toggleMute);
+      elementById('reset-progress').addEventListener('click', resetProgress);
       elementById('back-to-map').addEventListener('click', goToLevelMap);
       elementById('demo-continue').addEventListener('click', hideDemo);
       elementById('demo-overlay').addEventListener('click', (event) => {
