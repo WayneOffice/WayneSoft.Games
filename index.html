@@ -1805,7 +1805,19 @@
 
     function loadProgress() {
       try {
-        return parseProgress(window.localStorage.getItem(PROGRESS_STORAGE_KEY));
+        const rawValue = window.localStorage.getItem(PROGRESS_STORAGE_KEY);
+        const progress = parseProgress(rawValue);
+        // parseProgress migrates in memory only, so without this a v2 save would
+        // be re-migrated on every load and the stored shape would never catch up
+        // (spec §8.1). Comparing against the canonical form — rather than
+        // re-reading the stored schema version — keeps the migration's own
+        // version rule the only copy of that decision, and makes the rewrite
+        // self-limiting: once storage holds what we would write, nothing more
+        // is written. A profile that has never saved is left alone entirely.
+        if (rawValue !== null && serializeProgress(progress) !== rawValue) {
+          saveProgress(progress);
+        }
+        return progress;
       } catch (error) {
         console.error('localStorage is unavailable, progress will not be saved.', error);
         return createInitialProgress();
