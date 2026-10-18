@@ -54,7 +54,10 @@
   - `questionKey(question: Question): string`
   - `formatQuestion(question: Question): string`
   - `toQuestion(entry): Question` —— 把存档条目还原成题目对象
-  - 常量：`LEVEL_COUNT = 13`、`MIXED_LEVEL_ID = 12`、`TIMED_CHALLENGE_LEVEL_ID = 13`、`MIXED_LEVEL_IDS = [1..11]`、`CHALLENGE_LEVEL_ID`（= 13，语义别名）
+  - `answerOfQuestion(question: Question): number` —— **全游戏唯一的答案计算入口**
+  - 常量：`LEVEL_COUNT = 13`、`MIXED_LEVEL_ID = 12`、`TIMED_CHALLENGE_LEVEL_ID = 13`、`MIXED_LEVEL_IDS = [1..11]`
+
+**`answerOfQuestion` 必须存在，不能在两处各写一遍 `a − b`：** 当前代码在 `submitAnswer` 与 `showDemo` 里各自算了一次 `question.a - question.b`。多步题一旦引入，这两处都会把 `85 − 27 − 18` 的正确答案算成 58——孩子的正确答案被判错，演示卡还会写着「正确答案是 58」而它自己的最后一步是 `60 − 2 = 58`。
 
 **为什么把 `feasiblePairsForLevel` 改名：** 第 10、11 关的可行解不是 (a, b) 对，而是三元组。继续叫 "pairs" 会让下一个人误以为所有关卡都是两数相减。改名是这次扩展的必然结果，不是洁癖。
 
@@ -259,11 +262,11 @@ Expected: FAIL —— `logic.feasibleQuestionsForLevel is not a function`
 
     function collectLevel11Questions(questions) {
       for (let a = MIN_MIXED_MINUEND; a <= MAX_MINUEND; a += 1) {
-        for (let b = MIN_CHAIN_OPERAND; b <= MAX_CHAIN_OPERAND; b += 1) {
+        for (let b = MIN_CHAIN_OPERAND; b <= MAX_MIXED_OPERAND; b += 1) {
           if (b >= a) {
             continue;
           }
-          for (let c = MIN_CHAIN_OPERAND; c <= MAX_CHAIN_OPERAND; c += 1) {
+          for (let c = MIN_CHAIN_OPERAND; c <= MAX_MIXED_OPERAND; c += 1) {
             if (a - b + c <= MAX_MINUEND) {
               questions.push({ a, b, c, operator: MIXED_OPERATOR });
             }
@@ -285,26 +288,7 @@ Expected: FAIL —— `logic.feasibleQuestionsForLevel is not a function`
     const MIXED_OPERATOR = '+';
 ```
 
-**注意**：第 11 关的 `b` 上界与第 10 关不同（50 vs 39），所以 `collectLevel11Questions` 的循环里 `b` 用 `MAX_MIXED_OPERAND`，`c` 用 `MAX_CHAIN_OPERAND`。按 spec §4.3 原文照抄。
-
-修正后的第 11 关收集器：
-
-```js
-    function collectLevel11Questions(questions) {
-      for (let a = MIN_MIXED_MINUEND; a <= MAX_MINUEND; a += 1) {
-        for (let b = MIN_CHAIN_OPERAND; b <= MAX_MIXED_OPERAND; b += 1) {
-          if (b >= a) {
-            continue;
-          }
-          for (let c = MIN_CHAIN_OPERAND; c <= MAX_MIXED_OPERAND; c += 1) {
-            if (a - b + c <= MAX_MINUEND) {
-              questions.push({ a, b, c, operator: MIXED_OPERATOR });
-            }
-          }
-        }
-      }
-    }
-```
+**注意**：第 10 关的两个操作数都用 `MAX_CHAIN_OPERAND`（39），第 11 关的两个操作数都用 `MAX_MIXED_OPERAND`（50）——这是 spec §4.3 的原文（第 10 关 `b, c ∈ [11, 39]`；第 11 关 `b, c ∈ [11, 50]`）。上面两个收集器已经是最终版本，**不要再写第三个版本**。
 
 - [ ] **Step 5: 改写题目键、格式化与存档还原**
 
@@ -332,6 +316,19 @@ Expected: FAIL —— `logic.feasibleQuestionsForLevel is not a function`
       const operatorGlyph = question.operator === MIXED_OPERATOR ? '+' : '−';
       return `${question.a} − ${question.b} ${operatorGlyph} ${question.c} = ?`;
     }
+
+    // The single place the game computes an answer. submitAnswer and showDemo
+    // both used to inline `question.a - question.b`, which is wrong the moment
+    // a question has a third operand.
+    function answerOfQuestion(question) {
+      const intermediate = question.a - question.b;
+      if (question.c === undefined) {
+        return intermediate;
+      }
+      return question.operator === MIXED_OPERATOR
+        ? intermediate + question.c
+        : intermediate - question.c;
+    }
 ```
 
 并把 `drawMixedQuestion` 的历史错题分支改为返回完整题目：
@@ -358,6 +355,7 @@ Expected: FAIL —— `logic.feasibleQuestionsForLevel is not a function`
 
 ```js
   'toQuestion',
+  'answerOfQuestion',
   'ZODIAC_GLYPHS',
   'ZODIAC_NAMES',
   'POPE_GLYPH',
@@ -365,22 +363,93 @@ Expected: FAIL —— `logic.feasibleQuestionsForLevel is not a function`
   'ZODIAC_LEVEL_COUNT',
 ```
 
-- [ ] **Step 7: 修掉旧测试里对 `feasiblePairsForLevel` 的引用**
+- [ ] **Step 7: 修掉旧测试里的硬编码关卡编号**
 
-`tests/question-generator.test.js` 与 `tests/demo-generator.test.js` 里所有 `logic.feasiblePairsForLevel(` 改为 `logic.feasibleQuestionsForLevel(`。同时把 `tests/question-generator.test.js` 的 `LEVEL_RULES` 表补上第 9 关：
+这一步有三处，**漏掉任何一处，Step 8 的 `npm test` 都过不了**。
+
+1. `tests/question-generator.test.js` 与 `tests/demo-generator.test.js` 里所有 `logic.feasiblePairsForLevel(` 改为 `logic.feasibleQuestionsForLevel(`。
+
+2. `tests/question-generator.test.js` 的 `LEVEL_RULES` 表补上第 9 关：
 
 ```js
   9: ({ a, b }) => a === 100 && b >= 11 && b <= 99,
 ```
 
-并把遍历 `[1, 2, 3, 4, 5, 6, 7, 8]` 的地方按需要扩到 9（第 9 关是单步题，规则表可覆盖）。
+3. **`tests/progress.test.js` 里那条限时挑战测试**目前写死了旧编号：
 
-- [ ] **Step 8: 运行测试，确认通过**
+```js
+test('the timed challenge records a best score without awarding stars', () => {
+  const progress = logic.createInitialProgress();
+  logic.recordChallengeScore(progress, logic.TIMED_CHALLENGE_LEVEL_ID, 12);
+  logic.recordChallengeScore(progress, logic.TIMED_CHALLENGE_LEVEL_ID, 9);
+  assert.equal(progress.levelBestScore['10'], 12);
+  assert.equal(progress.levelStars['10'], undefined);
+});
+```
+
+`recordChallengeScore` 用的是常量（会变成 13），而断言写死了 `'10'`——改成用常量做键：
+
+```js
+test('the timed challenge records a best score without awarding stars', () => {
+  const progress = logic.createInitialProgress();
+  const key = String(logic.TIMED_CHALLENGE_LEVEL_ID);
+  logic.recordChallengeScore(progress, logic.TIMED_CHALLENGE_LEVEL_ID, 12);
+  logic.recordChallengeScore(progress, logic.TIMED_CHALLENGE_LEVEL_ID, 9);
+  assert.equal(progress.levelBestScore[key], 12);
+  assert.equal(progress.levelStars[key], undefined);
+});
+```
+
+- [ ] **Step 8: 补上关卡边界的断言**
+
+上面那些测试只验证「形状对不对」，不能钉住具体的取值边界。追加：
+
+```js
+test('the new levels really cover their stated ranges', () => {
+  const level10 = logic.feasibleQuestionsForLevel(10);
+  assert.ok(level10.some((q) => q.a === 50), 'level 10 must include a = 50');
+  assert.ok(level10.some((q) => q.a === 100), 'level 10 must include a = 100');
+  assert.ok(level10.some((q) => q.b === 11), 'level 10 must include b = 11');
+  assert.ok(level10.some((q) => q.c === 11), 'level 10 must include c = 11');
+
+  const level11 = logic.feasibleQuestionsForLevel(11);
+  assert.ok(level11.some((q) => q.b === 50), 'level 11 must include b = 50');
+  assert.ok(level11.some((q) => q.c === 50), 'level 11 must include c = 50');
+  assert.ok(level11.some((q) => q.a === 20), 'level 11 must include a = 20');
+});
+
+test('the mixed levels draw all eleven question types', () => {
+  const stream = logic.createQuestionStream(logic.MIXED_LEVEL_ID, logic.createRandom(99), []);
+  const shapes = new Set();
+  for (let index = 0; index < 3000; index += 1) {
+    const question = stream.next();
+    const shape = question.c === undefined ? 'single' : `multi${question.operator}`;
+    shapes.add(shape);
+  }
+  assert.ok(shapes.has('single'), 'mixed levels must include single-step questions');
+  assert.ok(shapes.has('multi-'), 'mixed levels must include chained subtraction');
+  assert.ok(shapes.has('multi+'), 'mixed levels must include mixed addition');
+});
+```
+
+第二条尤其重要：如果 `MIXED_LEVEL_IDS` 忘了从 `[1..8]` 扩到 `[1..11]`，现有的均匀性测试**仍然会通过**（它只检查每一类的占比落在 5%–20% 之间），但第 12/13 关就永远练不到被减数 100、连减和加减混合——整个 13 关设计的目的落空。
+
+再加一条钉住答案计算的测试：
+
+```js
+test('answerOfQuestion is the single source of truth for answers', () => {
+  assert.equal(logic.answerOfQuestion({ a: 42, b: 7 }), 35);
+  assert.equal(logic.answerOfQuestion({ a: 85, b: 27, c: 18, operator: '-' }), 40);
+  assert.equal(logic.answerOfQuestion({ a: 45, b: 18, c: 27, operator: '+' }), 54);
+});
+```
+
+- [ ] **Step 9: 运行测试，确认通过**
 
 Run: `npm test`
 Expected: PASS
 
-- [ ] **Step 9: 提交**
+- [ ] **Step 10: 提交**
 
 ```bash
 git add index.html tests/
@@ -437,7 +506,7 @@ test('mixed addition explains the carry only when there is one', () => {
   const carrying = logic.buildDemoSteps({ a: 45, b: 18, c: 27, operator: '+' });
   assert.equal(carrying.result, 54);
   assert.ok(
-    carrying.steps.includes('7 + 7 = 14'),
+    carrying.steps.includes('再加：7 + 7 = 14'),
     `carry step missing: ${JSON.stringify(carrying.steps)}`,
   );
   assert.ok(
@@ -462,7 +531,29 @@ Expected: FAIL —— `demo.steps[0].startsWith` 抛错，因为 `buildDemoSteps
 - [ ] **Step 3: 实现多步演示**
 
 1. 把现有 `function buildDemoSteps(a, b)` 改名为 `function buildSingleStepDemo(a, b)`，内容不变。
-2. 追加：
+2. **`buildNestedSteps` 必须同步改**——它现在调用的是旧的 `buildDemoSteps(intermediate, subtrahend)`。改名后那个名字将指向接收题目对象的新包装函数，传两个数字进去会让第 7、8、9 关的嵌套演示渲染出 `NaN − undefined`。把
+
+```js
+    function buildNestedSteps(intermediate, subtrahend) {
+      if (subtrahend === 0) {
+        return [];
+      }
+      return buildDemoSteps(intermediate, subtrahend).steps;
+    }
+```
+
+改为
+
+```js
+    function buildNestedSteps(intermediate, subtrahend) {
+      if (subtrahend === 0) {
+        return [];
+      }
+      return buildSingleStepDemo(intermediate, subtrahend).steps;
+    }
+```
+
+3. 追加：
 
 ```js
     const STEP_LABEL_FIRST = '第一步';
@@ -595,30 +686,40 @@ function lastStepResult(steps) {
 }
 ```
 
-- [ ] **Step 6: 把全量自检扩到第 10、11 关**
+- [ ] **Step 6: 把全量自检扩到第 9、10、11 关**
 
-把 `tests/demo-generator.test.js` 里两处 `for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8])` 改为：
+`tests/demo-generator.test.js` **不是**用字面量数组遍历关卡的，它顶部有三个常量（当前在文件第 38–40 行）：
 
 ```js
-    for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) {
+const NON_BORROWING_LEVEL_IDS = [1, 2, 3];
+const BORROWING_LEVEL_IDS = [4, 5, 6, 7, 8];
+const ALL_LEVEL_IDS = [...NON_BORROWING_LEVEL_IDS, ...BORROWING_LEVEL_IDS];
 ```
 
-并把调用 `logic.buildDemoSteps(a, b)` 的循环体改为遍历题目对象：
+**只扩展 `ALL_LEVEL_IDS`**，另外两个不动：
+
+```js
+const ALL_LEVEL_IDS = [...NON_BORROWING_LEVEL_IDS, ...BORROWING_LEVEL_IDS, 9, 10, 11];
+```
+
+**为什么不把 9、10、11 塞进另外两个：** 第 9 关既有借位题（`100 − 37`）也有不退位题（`100 − 20`），第 10、11 关是多步题——它们都不属于「永不需要借位」或「每道题都要借位」这两个纯组。`NON_BORROWING_LEVEL_IDS` 支撑的「不退位题必须是数位分解」测试，与 `BORROWING_LEVEL_IDS` 支撑的「借位题不能是数位分解」测试，都只对第 1–8 关成立。
+
+然后做三处机械替换：
+
+1. 所有 `logic.feasiblePairsForLevel(` → `logic.feasibleQuestionsForLevel(`。
+2. 所有 `logic.buildDemoSteps(a, b)` 与 `logic.buildDemoSteps(<数字>, <数字>)` → `logic.buildDemoSteps(question)` 或 `logic.buildDemoSteps({ a: 13, b: 7 })`。**包括文件顶部的固定样例测试**（`13 − 7`、`42 − 7`、`40 − 7`、`42 − 27`、`40 − 27`、`100 − 37`、`45 − 3`、`45 − 23`、`45 − 10`）——它们现在是两参数调用，不改会在 Step 7 全红。
+3. 遍历可行集的循环体从
+
+```js
+      for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
+        const demo = logic.buildDemoSteps(a, b);
+```
+
+改为
 
 ```js
       for (const question of logic.feasibleQuestionsForLevel(levelId)) {
         const demo = logic.buildDemoSteps(question);
-        assert.equal(demo.result, answerOf(question), `wrong result for ${logic.questionKey(question)}`);
-        assert.ok(demo.steps.length > 0, `empty demo for ${logic.questionKey(question)}`);
-        for (const step of demo.steps) {
-          assertStepIsArithmeticallyTrue(step);
-        }
-        assert.equal(
-          lastStepResult(demo.steps),
-          answerOf(question),
-          `the last step of the ${logic.questionKey(question)} demo does not reach the answer`,
-        );
-      }
 ```
 
 同一文件顶部加上与 `question-generator.test.js` 相同的 `answerOf` 辅助函数：
@@ -633,7 +734,9 @@ function answerOf(question) {
 }
 ```
 
-**注意**：单步题固定期望的样例测试（`13 − 7`、`42 − 7` 等）仍需把 `logic.buildDemoSteps(13, 7)` 改成 `logic.buildDemoSteps({ a: 13, b: 7 })`。
+并把循环里对 `demo.result` 的断言从 `a - b` 改成 `answerOf(question)`。
+
+**「第 4–8 关的演示提到借十」那条测试继续用 `BORROWING_LEVEL_IDS`，不要改**——多步题的演示不遵循单步的借位判定，把它扩进去只会失败。
 
 - [ ] **Step 7: 运行全部测试**
 
@@ -803,7 +906,9 @@ Expected: FAIL —— `progress.schemaVersion` 为 `undefined`。
         return false;
       }
       if (entry.c === undefined) {
-        return true;
+        // An operator without a third operand is a half-written multi-step
+        // entry, not a single-step question.
+        return entry.operator === undefined;
       }
       if (!Number.isInteger(entry.c) || !WRONG_ANSWER_OPERATORS.includes(entry.operator)) {
         return false;
@@ -832,7 +937,42 @@ Expected: FAIL —— `progress.schemaVersion` 为 `undefined`。
         });
 ```
 
-5. 在 `parseProgress` 之前加入迁移函数：
+5. **`mergeAnswerIntoProgress` 必须保存多步题的完整形状。** 它现在无条件 `push({ a, b, count: 1 })`，多步题会被存成单步——孩子在第 10 关错过的 `85 − 27 − 18` 会变成 `85 − 27`，第 12 关的历史错题抽题于是给他一道更简单的、不同题。把整个函数替换为：
+
+```js
+    function buildWrongAnswerEntry(question) {
+      const entry = { a: question.a, b: question.b, count: 1 };
+      if (question.c !== undefined) {
+        entry.c = question.c;
+        entry.operator = question.operator;
+      }
+      return entry;
+    }
+
+    function mergeAnswerIntoProgress(progress, question, isCorrect) {
+      const key = questionKey(question);
+      if (isCorrect) {
+        const index = progress.wrongAnswers.findIndex((entry) => questionKey(entry) === key);
+        if (index >= 0) {
+          progress.wrongAnswers.splice(index, 1);
+        }
+        return;
+      }
+      const existing = progress.wrongAnswers.find((entry) => questionKey(entry) === key);
+      if (existing !== undefined) {
+        existing.count += 1;
+        return;
+      }
+      progress.wrongAnswers.push(buildWrongAnswerEntry(question));
+      if (progress.wrongAnswers.length > MAX_TRACKED_WRONG_ANSWERS) {
+        progress.wrongAnswers.shift();
+      }
+    }
+```
+
+注意 `questionKey(entry)` 现在也能处理多步条目——`entry` 与 `question` 的形状相同，`questionKey` 只读 `a`/`b`/`c`/`operator`。
+
+6. 在 `parseProgress` 之前加入迁移函数：
 
 ```js
     function copyLevelValue(target, source, fromKey, toKey) {
@@ -877,7 +1017,7 @@ Expected: FAIL —— `progress.schemaVersion` 为 `undefined`。
     }
 ```
 
-6. 把 `parseProgress` 的成功分支替换为：
+7. 把 `parseProgress` 的成功分支替换为（**注意保留 `logDiscardedProgress(parsed)`** ——它是 spec §8「数据损坏要记录到控制台」的实现，删掉会让四个丢弃计数器变成死代码）：
 
 ```js
       try {
@@ -885,6 +1025,7 @@ Expected: FAIL —— `progress.schemaVersion` 为 `undefined`。
         if (!isPlainObject(parsed)) {
           return createInitialProgress();
         }
+        logDiscardedProgress(parsed);
         return migrateProgress({
           schemaVersion: Number.isInteger(parsed.schemaVersion) ? parsed.schemaVersion : 0,
           levelStars: sanitizeLevelStars(parsed.levelStars),
@@ -1000,7 +1141,16 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
     }
 ```
 
-3. 在 `game-ui` 中把 `buildStarMapNode` 替换为：
+3. **把这两个名字加进测试加载器**——Step 2 的测试直接调用它们，不加进 `EXPORTED_NAMES` 会一直是 `undefined`，Step 7 的 PASS 永远到不了。在 `tests/game-script-loader.js` 的 `EXPORTED_NAMES` 里加入：
+
+```js
+  'starNodeColumn',
+  'starNodeRow',
+```
+
+4. 同时**删掉 `PLANET_ICONS`**常量的声明（`const PLANET_ICONS = [...]`）——新的节点渲染用 `ZODIAC_GLYPHS` 与 `POPE_GLYPH`，它不再有任何消费者，留着就是死代码。删之前先 grep 确认全文件只剩声明那一处。
+
+5. 在 `game-ui` 中把 `buildStarMapNode` 替换为：
 
 ```js
     function starNodeGlyph(levelId) {
@@ -1077,7 +1227,7 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
     }
 ```
 
-4. 把 `renderLevelMap` 替换为：
+6. 把 `renderLevelMap` 替换为：
 
 ```js
     function renderLevelMap() {
@@ -1103,7 +1253,7 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
     }
 ```
 
-5. 在 `renderLevelMap` 之后加入 SVG 连线：
+7. 在 `renderLevelMap` 之后加入 SVG 连线：
 
 ```js
     function clearStarMapLines() {
@@ -1140,13 +1290,13 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
 
 **注意**：`nodes[index - 1]` 与 `nodes[index]` 是按 DOM 顺序取的，即第 1 关到第 12 关再到教皇厅——与蛇形路径一致。`isLevelCleared(index)` 用的是「第 index 关」（1-based）是否通关。
 
-6. 在 `initGame` 里注册重算：
+8. 在 `initGame` 里注册重算：
 
 ```js
       window.addEventListener('resize', renderStarMapLines);
 ```
 
-7. 详情卡标题带上星座名——把 `buildLevelDetail` 里的
+9. 详情卡标题带上星座名——把 `buildLevelDetail` 里的
 
 ```js
       heading.textContent = `第 ${levelId} 关 · ${LEVEL_TITLES[levelId]}`;
@@ -1160,14 +1310,24 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
 
 - [ ] **Step 5: 写地图样式**
 
-在 `<style>` 的星图区替换旧的 `.star-map-scroll` / `.star-map` / 连线伪元素规则，改为：
+**替换范围必须写清楚，否则会误删仍然需要的规则。** 在 `<style>` 里：
+
+- **删除**：`.star-map-scroll`、`.star-map-scroll::-webkit-scrollbar`、`.star-map`、`.star-node`、`.star-node + .star-node::before`、`.star-node.is-cleared + .star-node::before`。旧的横向连线伪元素随 `.star-node + .star-node::before` 一起消失。
+- **保留不动**：`.star-node-ship`、`@keyframes ship-bob`、`.star-node-number`、`.star-node-stars`、`.star-node.is-just-cleared …`、`@keyframes planet-light-up`、`.star-node-button:active:not(:disabled)`。
+- **新增或覆盖**：下面这整块。
+
+注意 `padding-top: 26px` 是给 🚀 留的位置——`.star-node-ship` 是 `top: -22px`，容器不留白就会把第一行（教皇厅）被选中时的飞船裁掉一半。
+
+改为：
 
 ```css
       .star-map-scroll {
         width: 100%;
-        max-height: 62vh;
+        max-height: 58vh;
         overflow-y: auto;
-        padding: 8px 4px;
+        /* Top padding reserves room for the rocket, which sits at top: -22px
+           on the selected node; without it the Pope's rocket is clipped. */
+        padding: 26px 4px 8px;
         scrollbar-width: none;
         scroll-behavior: smooth;
       }
@@ -1281,6 +1441,16 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
         color: var(--text-dim);
         cursor: not-allowed;
       }
+
+      /* The map is tall; a detail card that scrolls with it can leave the
+         start button below the fold right after the child picks a node near
+         the top. Pin it to the bottom of the viewport instead, so 开始 is
+         always reachable. */
+      .level-detail {
+        position: sticky;
+        bottom: 0;
+        z-index: 5;
+      }
 ```
 
 **已通关改为金色**（黄金圣斗士），因此把原来的 `--glow-cyan` 描边一律换成 `--glow-amber`。连线仍用青色，形成「金色节点 + 青色路径」的对比。
@@ -1328,16 +1498,15 @@ test('only chained-subtraction questions may answer zero', () => {
   assert.equal(logic.canQuestionAnswerZero({ a: 50, b: 25, c: 25, operator: '-' }), true);
 });
 
-test('a zero is only accepted when the question allows it', () => {
+test('a zero is only accepted when the question allows it, and completes the input', () => {
   assert.equal(logic.appendDigit('', 0, false), '');
   assert.equal(logic.appendDigit('', 0, true), '0');
-  // A chained-subtraction answer of 12 must not become "01".
-  assert.equal(logic.appendDigit('0', 1, true), '01');
+  // Spec §5.4: a zero answer is complete on its own, so a second digit is
+  // refused rather than producing "01".
+  assert.equal(logic.appendDigit('0', 1, true), '0');
   assert.equal(logic.appendDigit('', 4, true), '4');
 });
 ```
-
-**注意**：上面第二条断言的期望值是 `'01'` —— 这是**有意允许**的临时输入状态：孩子先点了 0 再点 1，判定时 `Number('01') === 1`，不会误判。不要为此增加「输满后禁止」的额外规则。
 
 - [ ] **Step 2: 运行测试，确认失败**
 
@@ -1346,7 +1515,7 @@ Expected: FAIL —— `logic.canQuestionAnswerZero is not a function`.
 
 - [ ] **Step 3: 实现零答案判定与输入**
 
-1. 在 `game-logic` 中加入：
+1. 在 `game-logic` 中加入 `canQuestionAnswerZero`，并**替换现有的 `appendDigit`**（它已经在 `index.html:1336` 附近有一个两参数版本；新增一个同名函数而不删旧的，会变成两个声明并存，实际生效的取决于插入位置——这是个不该出现的赌博）。
 
 ```js
     function canQuestionAnswerZero(question) {
@@ -1357,8 +1526,13 @@ Expected: FAIL —— `logic.canQuestionAnswerZero is not a function`.
       if (currentInput.length >= MAX_ANSWER_DIGITS) {
         return currentInput;
       }
-      if (currentInput.length === 0 && digit === 0 && !isZeroAllowed) {
+      // Spec §5.4: a zero answer is complete on its own, so a second digit is
+      // refused rather than producing "01".
+      if (currentInput === '0') {
         return currentInput;
+      }
+      if (currentInput.length === 0 && digit === 0) {
+        return isZeroAllowed ? '0' : currentInput;
       }
       return currentInput + String(digit);
     }
@@ -1377,9 +1551,55 @@ Expected: FAIL —— `logic.canQuestionAnswerZero is not a function`.
     }
 ```
 
-- [ ] **Step 4: 多步题的题目渲染**
+- [ ] **Step 4: 多步题的答案、渲染与演示调用**
 
-把 `<script id="game-ui">` 里的 `renderQuestionText` 替换为：
+**先修答案计算的两处**——这是本计划最容易漏、后果最直接的一处。当前 `submitAnswer` 与 `showDemo` 各自内联了 `question.a - question.b`，多步题会被判成单步答案。
+
+1. 把 `submitAnswer` 里的
+
+```js
+      const isCorrect = Number(gameState.currentInput) === question.a - question.b;
+```
+
+改为
+
+```js
+      const isCorrect = Number(gameState.currentInput) === answerOfQuestion(question);
+```
+
+2. 把 `showDemo` 里设置演示卡标题的那一段
+
+```js
+      elementById('demo-title').textContent = DEMO_ANSWER_TEMPLATE.replace(
+        '{answer}',
+        String(question.a - question.b),
+      );
+```
+
+改为
+
+```js
+      elementById('demo-title').textContent = DEMO_ANSWER_TEMPLATE.replace(
+        '{answer}',
+        String(answerOfQuestion(question)),
+      );
+```
+
+3. 把 `showDemo` 里遍历步骤的那一行
+
+```js
+      for (const step of buildDemoSteps(question.a, question.b).steps) {
+```
+
+改为
+
+```js
+      for (const step of buildDemoSteps(question).steps) {
+```
+
+4. **`answerOfQuestion` 只在 `game-logic` 里定义一次**（Task 1）。两个 script 块共享全局作用域，在 `game-ui` 里再声明一次同名函数会让后解析的那个覆盖前者，行为取决于加载顺序。这里只调用，不定义。
+
+5. 多步题的题目渲染——把 `<script id="game-ui">` 里的 `renderQuestionText` 替换为：
 
 ```js
     function renderQuestionText() {
@@ -1402,7 +1622,13 @@ Expected: FAIL —— `logic.canQuestionAnswerZero is not a function`.
 
 - [ ] **Step 5: 第 13 关的答错行为与 challengePlayed**
 
-把 `handleWrongAnswer` 里 `isTimedChallenge()` 的分支改为：
+1. **第 13 关的答错不得进错题池。** spec §5.6 明确「不记入错题池」，而 `handleWrongAnswer` 现在的 `if (!gameState.isRetrying)` 分支里既 push `wrongQuestions` 又调 `mergeAnswerIntoProgress`。把那行条件改为：
+
+```js
+      if (!gameState.isRetrying && !isTimedChallenge()) {
+```
+
+2. 把 `handleWrongAnswer` 里 `isTimedChallenge()` 的分支改为（`answerOfQuestion` 来自 `game-logic`，不要在这里重新定义）：
 
 ```js
       if (isTimedChallenge()) {
@@ -1414,36 +1640,10 @@ Expected: FAIL —— `logic.canQuestionAnswerZero is not a function`.
       }
 ```
 
-并在 `game-ui` 里加入：
-
-```js
-    function answerOfQuestion(question) {
-      const intermediate = question.a - question.b;
-      if (question.c === undefined) {
-        return intermediate;
-      }
-      return question.operator === MIXED_OPERATOR
-        ? intermediate + question.c
-        : intermediate - question.c;
-    }
-```
-
-把 `finishTimedChallenge` 里设置成绩的那一行之前加入：
+3. 把 `finishTimedChallenge` 里设置成绩的那一行之前加入：
 
 ```js
       gameState.progress.challengePlayed = true;
-```
-
-把 `showDemo(question)` 里调用 `buildDemoSteps` 的那一行从
-
-```js
-      for (const step of buildDemoSteps(question.a, question.b).steps) {
-```
-
-改为
-
-```js
-      for (const step of buildDemoSteps(question).steps) {
 ```
 
 - [ ] **Step 6: 第 13 关的「已玩过」改用 challengePlayed**
@@ -1545,7 +1745,16 @@ git diff $(git merge-base develop HEAD)..HEAD -- index.html tests/
 Run: `npm test`
 Expected: PASS，无失败。
 
-- [ ] **Step 3: 桌面端逐条验收（spec §9）**
+- [ ] **Step 3: 提交收尾结果**
+
+**必须先提交再部署。** 下面的部署用 `git show HEAD:index.html` 取文件；若 `/simplify` 改过工作区而没有提交，部署上去的是收尾前的版本，而验收是在收尾后的版本上做的——线上与仓库不一致，且三方 md5 检查发现不了，因为三方比的都是那份旧的 HEAD。
+
+```bash
+git add -A
+git commit -m "chore: 十二宫地图与 13 关的实现收尾"
+```
+
+- [ ] **Step 4: 桌面端逐条验收（spec §9）**
 
 双击 `index.html`（Chrome / Edge），逐项确认：
 
@@ -1565,7 +1774,7 @@ Expected: PASS，无失败。
 - [ ] 首次答对能听到音效；静音开关生效并持久化。
 - [ ] 弱提示 15 秒、强提示 30 秒按 §5.2 触发。
 
-- [ ] **Step 4: 地图专属验收（spec §9.11–9.16）**
+- [ ] **Step 5: 地图专属验收（spec §9.11–9.16）**
 
 - [ ] 13 个节点按蛇形排布：第 1 关在左下、第 2 关右下、第 3 关左上……第 12 关在顶部，教皇厅居中最上。**不在一条直线上。**
 - [ ] 连线从节点连到节点，不断开、不压在星座名上。
@@ -1574,7 +1783,7 @@ Expected: PASS，无失败。
 - [ ] 选中靠上的节点后，「开始」按钮的矩形仍在视口内。
 - [ ] 打开「减少动态效果」后：节点不再脉动、飞船不再浮动、地图不平滑滚动。
 
-- [ ] **Step 5: 部署到 wayneoffice.cn**
+- [ ] **Step 6: 部署到 wayneoffice.cn**
 
 按 vault 笔记「云主机 Nginx 与 frps」的流程（**必须传 LF 版本**）：
 
@@ -1588,15 +1797,17 @@ curl -s https://wayneoffice.cn/subtraction/ | md5sum
 
 三方 md5 必须一致。
 
-- [ ] **Step 6: 线上验证**
+- [ ] **Step 7: 线上验证**
 
 在浏览器打开 `https://wayneoffice.cn/subtraction/`，确认 13 个节点、蛇形布局、连线正常，控制台无消息；玩一关确认答题与进度写入正常。
 
-- [ ] **Step 7: 提交**
+- [ ] **Step 8: 验收中发现的问题**
+
+若 Step 4–7 暴露了问题，修完再提交一次并重新部署：
 
 ```bash
 git add -A
-git commit -m "chore: 十二宫地图与 13 关的端到端验收"
+git commit -m "fix: 端到端验收发现的问题"
 ```
 
 ---
