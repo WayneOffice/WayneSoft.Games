@@ -90,7 +90,7 @@ test('the demo for 100 - 37 nests a break-ten step', () => {
 
 test('no demo step ever contains a negative operand', () => {
   for (const levelId of ALL_LEVEL_IDS) {
-    for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
+    for (const { a, b } of logic.feasibleQuestionsForLevel(levelId)) {
       for (const step of logic.buildDemoSteps(a, b).steps) {
         assert.ok(
           !step.includes('− -') && !step.includes('+ -'),
@@ -103,7 +103,7 @@ test('no demo step ever contains a negative operand', () => {
 
 test('every demo step is arithmetically true and lands on the correct difference', () => {
   for (const levelId of ALL_LEVEL_IDS) {
-    for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
+    for (const { a, b } of logic.feasibleQuestionsForLevel(levelId)) {
       const demo = logic.buildDemoSteps(a, b);
       assert.equal(demo.result, a - b, `wrong result for ${a} - ${b}`);
       assert.ok(demo.steps.length > 0, `empty demo for ${a} - ${b}`);
@@ -127,7 +127,7 @@ test('every demo step is arithmetically true and lands on the correct difference
 // covered by the sweep below.
 test('every level 4 to 8 demo spends at least two steps on the borrow', () => {
   for (const levelId of BORROWING_LEVEL_IDS) {
-    for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
+    for (const { a, b } of logic.feasibleQuestionsForLevel(levelId)) {
       const demo = logic.buildDemoSteps(a, b);
       assert.ok(
         demo.steps.length >= 2,
@@ -139,7 +139,7 @@ test('every level 4 to 8 demo spends at least two steps on the borrow', () => {
 
 test('a problem that needs no borrowing is always explained by place value', () => {
   for (const levelId of ALL_LEVEL_IDS) {
-    for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
+    for (const { a, b } of logic.feasibleQuestionsForLevel(levelId)) {
       if (logic.needsBorrowing(a, b)) {
         continue;
       }
@@ -160,7 +160,7 @@ test('the demo for 45 - 10 subtracts a whole ten, not a borrowed one', () => {
 
 test('the level rules, not the predicate, decide whether a demo borrows', () => {
   for (const levelId of NON_BORROWING_LEVEL_IDS) {
-    for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
+    for (const { a, b } of logic.feasibleQuestionsForLevel(levelId)) {
       assert.ok(
         a % DECIMAL_BASE >= b % DECIMAL_BASE,
         `level ${levelId} is supposed not to borrow, but ${a} - ${b} breaks that rule`,
@@ -173,7 +173,7 @@ test('the level rules, not the predicate, decide whether a demo borrows', () => 
     }
   }
   for (const levelId of BORROWING_LEVEL_IDS) {
-    for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
+    for (const { a, b } of logic.feasibleQuestionsForLevel(levelId)) {
       assert.ok(
         a % DECIMAL_BASE < b % DECIMAL_BASE,
         `level ${levelId} is supposed to borrow, but ${a} - ${b} breaks that rule`,

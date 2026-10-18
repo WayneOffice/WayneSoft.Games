@@ -754,10 +754,10 @@
   <script id="game-logic">
     'use strict';
 
-    const LEVEL_COUNT = 10;
-    const MIXED_LEVEL_ID = 9;
-    const TIMED_CHALLENGE_LEVEL_ID = 10;
-    const MIXED_LEVEL_IDS = [1, 2, 3, 4, 5, 6, 7, 8];
+    const LEVEL_COUNT = 13;
+    const MIXED_LEVEL_ID = 12;
+    const TIMED_CHALLENGE_LEVEL_ID = 13;
+    const MIXED_LEVEL_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
     const LEVEL_QUESTION_COUNTS = {
       1: 10,
@@ -768,7 +768,10 @@
       6: 12,
       7: 12,
       8: 12,
-      9: 15,
+      9: 12,
+      10: 12,
+      11: 12,
+      12: 15,
     };
 
     const LEVEL_TITLES = {
@@ -780,9 +783,21 @@
       6: '整十数减一位数',
       7: '退位减两位数',
       8: '整十数减两位数',
-      9: '混合综合',
-      10: '限时挑战',
+      9: '被减数是 100',
+      10: '连减',
+      11: '加减混合',
+      12: '混合综合',
+      13: '限时挑战',
     };
+
+    const ZODIAC_GLYPHS = ['♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓'];
+    const ZODIAC_NAMES = [
+      '白羊宫', '金牛宫', '双子宫', '巨蟹宫', '狮子宫', '处女宫',
+      '天秤宫', '天蝎宫', '射手宫', '摩羯宫', '水瓶宫', '双鱼宫',
+    ];
+    const POPE_GLYPH = '⛩';
+    const POPE_NAME = '教皇厅';
+    const ZODIAC_LEVEL_COUNT = 12;
 
     const HISTORICAL_WRONG_ANSWER_RATE = 0.3;
 
@@ -798,51 +813,67 @@
     const MIN_ROUND_TEN_MINUEND = 20;
     const MAX_ROUND_TEN_MINUEND = 90;
     const MIN_ROUND_TEN_MINUEND_FOR_TWO_DIGIT = 30;
+    const MIN_CHAIN_MINUEND = 50;
+    const MIN_MIXED_MINUEND = 20;
+    const MIN_CHAIN_OPERAND = 11;
+    const MAX_CHAIN_OPERAND = 39;
+    const MAX_MIXED_OPERAND = 50;
+    const CHAIN_OPERATOR = '-';
+    const MIXED_OPERATOR = '+';
 
-    const feasiblePairsCache = new Map();
+    const feasibleQuestionsCache = new Map();
 
     function onesDigit(value) {
       return value % ONES_PER_TEN;
     }
 
-    function buildFeasiblePairs(levelId) {
-      const pairs = [];
+    function buildFeasibleQuestions(levelId) {
+      const questions = [];
       switch (levelId) {
         case 1:
-          collectLevel1Pairs(pairs);
+          collectLevel1Pairs(questions);
           break;
         case 2:
-          collectLevel2Pairs(pairs);
+          collectLevel2Pairs(questions);
           break;
         case 3:
-          collectLevel3Pairs(pairs);
+          collectLevel3Pairs(questions);
           break;
         case 4:
-          collectLevel4Pairs(pairs);
+          collectLevel4Pairs(questions);
           break;
         case 5:
-          collectLevel5Pairs(pairs);
+          collectLevel5Pairs(questions);
           break;
         case 6:
-          collectLevel6Pairs(pairs);
+          collectLevel6Pairs(questions);
           break;
         case 7:
-          collectLevel7Pairs(pairs);
+          collectLevel7Pairs(questions);
           break;
         case 8:
-          collectLevel8Pairs(pairs);
+          collectLevel8Pairs(questions);
+          break;
+        case 9:
+          collectLevel9Questions(questions);
+          break;
+        case 10:
+          collectLevel10Questions(questions);
+          break;
+        case 11:
+          collectLevel11Questions(questions);
           break;
         default:
           throw new Error(`Unknown level id: ${levelId}`);
       }
-      return pairs;
+      return questions;
     }
 
-    function feasiblePairsForLevel(levelId) {
-      if (!feasiblePairsCache.has(levelId)) {
-        feasiblePairsCache.set(levelId, buildFeasiblePairs(levelId));
+    function feasibleQuestionsForLevel(levelId) {
+      if (!feasibleQuestionsCache.has(levelId)) {
+        feasibleQuestionsCache.set(levelId, buildFeasibleQuestions(levelId));
       }
-      return feasiblePairsCache.get(levelId);
+      return feasibleQuestionsCache.get(levelId);
     }
 
     function collectLevel1Pairs(pairs) {
@@ -920,7 +951,7 @@
     }
 
     function collectLevel8Pairs(pairs) {
-      for (let a = MIN_ROUND_TEN_MINUEND_FOR_TWO_DIGIT; a <= MAX_MINUEND_WITH_HUNDRED; a += ONES_PER_TEN) {
+      for (let a = MIN_ROUND_TEN_MINUEND_FOR_TWO_DIGIT; a <= MAX_ROUND_TEN_MINUEND; a += ONES_PER_TEN) {
         for (let b = MIN_TWO_DIGIT_NUMBER; b < a; b += 1) {
           if (onesDigit(a) < onesDigit(b)) {
             pairs.push({ a, b });
@@ -929,8 +960,72 @@
       }
     }
 
+    function collectLevel9Questions(questions) {
+      for (let b = MIN_TWO_DIGIT_NUMBER; b <= MAX_MINUEND; b += 1) {
+        questions.push({ a: MAX_MINUEND_WITH_HUNDRED, b });
+      }
+    }
+
+    function collectLevel10Questions(questions) {
+      for (let a = MIN_CHAIN_MINUEND; a <= MAX_MINUEND_WITH_HUNDRED; a += 1) {
+        for (let b = MIN_CHAIN_OPERAND; b <= MAX_CHAIN_OPERAND; b += 1) {
+          for (let c = MIN_CHAIN_OPERAND; c <= MAX_CHAIN_OPERAND; c += 1) {
+            if (a - b - c >= 0) {
+              questions.push({ a, b, c, operator: CHAIN_OPERATOR });
+            }
+          }
+        }
+      }
+    }
+
+    function collectLevel11Questions(questions) {
+      for (let a = MIN_MIXED_MINUEND; a <= MAX_MINUEND; a += 1) {
+        for (let b = MIN_CHAIN_OPERAND; b <= MAX_MIXED_OPERAND; b += 1) {
+          if (b >= a) {
+            continue;
+          }
+          for (let c = MIN_CHAIN_OPERAND; c <= MAX_MIXED_OPERAND; c += 1) {
+            if (a - b + c <= MAX_MINUEND) {
+              questions.push({ a, b, c, operator: MIXED_OPERATOR });
+            }
+          }
+        }
+      }
+    }
+
     function questionKey(question) {
-      return `${question.a}-${question.b}`;
+      if (question.c === undefined) {
+        return `${question.a}-${question.b}`;
+      }
+      return `${question.a}-${question.b}${question.operator}${question.c}`;
+    }
+
+    function toQuestion(entry) {
+      if (entry.c === undefined) {
+        return { a: entry.a, b: entry.b };
+      }
+      return { a: entry.a, b: entry.b, c: entry.c, operator: entry.operator };
+    }
+
+    function formatQuestion(question) {
+      if (question.c === undefined) {
+        return `${question.a} − ${question.b} = ?`;
+      }
+      const operatorGlyph = question.operator === MIXED_OPERATOR ? '+' : '−';
+      return `${question.a} − ${question.b} ${operatorGlyph} ${question.c} = ?`;
+    }
+
+    // The single place the game computes an answer. submitAnswer and showDemo
+    // both used to inline `question.a - question.b`, which is wrong the moment
+    // a question has a third operand.
+    function answerOfQuestion(question) {
+      const intermediate = question.a - question.b;
+      if (question.c === undefined) {
+        return intermediate;
+      }
+      return question.operator === MIXED_OPERATOR
+        ? intermediate + question.c
+        : intermediate - question.c;
     }
 
     function createRandom(seed) {
@@ -948,13 +1043,13 @@
       return items[Math.floor(random() * items.length)];
     }
 
-    // Uniform over feasible (a, b) pairs, never over minuends: picking the
-    // minuend first would over-weight small minuends, which have fewer
+    // Uniform over the level's feasible questions, never over minuends: picking
+    // the minuend first would over-weight small minuends, which have fewer
     // feasible subtrahends.
     function drawFromLevel(levelId, random, usedKeys) {
-      const pairs = feasiblePairsForLevel(levelId);
-      const available = pairs.filter((pair) => !usedKeys.has(questionKey(pair)));
-      return pickRandom(available.length > 0 ? available : pairs, random);
+      const questions = feasibleQuestionsForLevel(levelId);
+      const available = questions.filter((question) => !usedKeys.has(questionKey(question)));
+      return pickRandom(available.length > 0 ? available : questions, random);
     }
 
     function drawMixedQuestion(random, usedKeys, historicalWrongAnswers) {
@@ -962,8 +1057,9 @@
         && random() < HISTORICAL_WRONG_ANSWER_RATE;
       if (canUseHistorical) {
         const candidate = pickRandom(historicalWrongAnswers, random);
-        if (!usedKeys.has(questionKey(candidate))) {
-          return { a: candidate.a, b: candidate.b };
+        const question = toQuestion(candidate);
+        if (!usedKeys.has(questionKey(question))) {
+          return question;
         }
       }
       return drawFromLevel(pickRandom(MIXED_LEVEL_IDS, random), random, usedKeys);
@@ -981,10 +1077,6 @@
           return question;
         },
       };
-    }
-
-    function formatQuestion(question) {
-      return `${question.a} − ${question.b} = ?`;
     }
 
     const DEMO_STRATEGY = {

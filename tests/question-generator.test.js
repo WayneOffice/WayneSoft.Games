@@ -16,11 +16,24 @@ const LEVEL_RULES = {
   6: ({ a, b }) => a >= 20 && a <= 90 && a % 10 === 0 && b >= 1 && b <= 9,
   7: ({ a, b }) => a >= 21 && a <= 99 && a % 10 !== 0 && b >= 11 && b < a && a % 10 < b % 10,
   8: ({ a, b }) => a >= 30 && a <= 100 && a % 10 === 0 && b >= 11 && b < a && a % 10 < b % 10,
+  9: ({ a, b }) => a === 100 && b >= 11 && b <= 99,
 };
+
+function answerOf(question) {
+  const intermediate = question.a - question.b;
+  if (question.c === undefined) {
+    return intermediate;
+  }
+  return question.operator === '+' ? intermediate + question.c : intermediate - question.c;
+}
+
+function questionKeyOf(question) {
+  return logic.questionKey(question);
+}
 
 for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
   test(`level ${levelId} feasible pairs all satisfy the level rule`, () => {
-    const pairs = logic.feasiblePairsForLevel(levelId);
+    const pairs = logic.feasibleQuestionsForLevel(levelId);
     assert.ok(pairs.length > 0, `level ${levelId} must have feasible pairs`);
     for (const pair of pairs) {
       assert.ok(LEVEL_RULES[levelId](pair), `pair violates level ${levelId} rule: ${pair.a} - ${pair.b}`);
@@ -33,7 +46,7 @@ test('every level has at least as many feasible pairs as questions it asks', () 
   // excluded here.
   for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
     const questionCount = logic.LEVEL_QUESTION_COUNTS[levelId];
-    const pairs = logic.feasiblePairsForLevel(levelId);
+    const pairs = logic.feasibleQuestionsForLevel(levelId);
     assert.ok(
       pairs.length >= questionCount,
       `level ${levelId} has ${pairs.length} pairs but asks ${questionCount} questions`,
@@ -43,14 +56,14 @@ test('every level has at least as many feasible pairs as questions it asks', () 
 
 test('the difference is never zero and never negative on any level', () => {
   for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
-    for (const { a, b } of logic.feasiblePairsForLevel(levelId)) {
+    for (const { a, b } of logic.feasibleQuestionsForLevel(levelId)) {
       assert.ok(a - b >= 1, `difference must be at least 1: ${a} - ${b}`);
     }
   }
 });
 
 test('level 4 has exactly 36 feasible pairs', () => {
-  assert.equal(logic.feasiblePairsForLevel(4).length, 36);
+  assert.equal(logic.feasibleQuestionsForLevel(4).length, 36);
 });
 
 test('a level never repeats a question within one run', () => {
@@ -138,4 +151,103 @@ test('historical wrong answers are reused by mixed levels', () => {
 
 test('formatQuestion renders the question with a minus sign', () => {
   assert.equal(logic.formatQuestion({ a: 42, b: 7 }), '42 − 7 = ?');
+});
+
+test('each level exposes its feasible questions with the right shape', () => {
+  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+    const questions = logic.feasibleQuestionsForLevel(levelId);
+    assert.ok(questions.length > 0, `level ${levelId} has no questions`);
+    for (const question of questions) {
+      assert.equal(question.c, undefined, `level ${levelId} must be single-step`);
+      assert.ok(Number.isInteger(question.a), `level ${levelId} bad a`);
+      assert.ok(Number.isInteger(question.b), `level ${levelId} bad b`);
+    }
+  }
+  for (const levelId of [10, 11]) {
+    const questions = logic.feasibleQuestionsForLevel(levelId);
+    assert.ok(questions.length > 0, `level ${levelId} has no questions`);
+    for (const question of questions) {
+      assert.ok(Number.isInteger(question.c), `level ${levelId} missing c`);
+      assert.ok(question.operator === '-' || question.operator === '+', `level ${levelId} bad operator`);
+    }
+  }
+});
+
+test('level 9 is exactly the hundred minuend', () => {
+  const questions = logic.feasibleQuestionsForLevel(9);
+  assert.equal(questions.length, 89);
+  for (const question of questions) {
+    assert.equal(question.a, 100);
+    assert.ok(question.b >= 11 && question.b <= 99);
+  }
+});
+
+test('level 8 no longer contains a hundred minuend', () => {
+  for (const question of logic.feasibleQuestionsForLevel(8)) {
+    assert.ok(question.a < 100, `level 8 must not include 100: ${question.a} - ${question.b}`);
+  }
+});
+
+test('no level can produce an answer outside 0..99', () => {
+  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) {
+    for (const question of logic.feasibleQuestionsForLevel(levelId)) {
+      const answer = answerOf(question);
+      assert.ok(answer >= 0, `negative answer on level ${levelId}: ${questionKeyOf(question)}`);
+      assert.ok(answer <= 99, `answer above 99 on level ${levelId}: ${questionKeyOf(question)}`);
+    }
+  }
+});
+
+test('only the chained-subtraction level can answer zero', () => {
+  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8, 9, 11]) {
+    for (const question of logic.feasibleQuestionsForLevel(levelId)) {
+      assert.ok(answerOf(question) >= 1, `level ${levelId} must never answer 0`);
+    }
+  }
+  const zeros = logic.feasibleQuestionsForLevel(10).filter((q) => answerOf(q) === 0);
+  assert.ok(zeros.length > 0, 'level 10 must be able to reach zero');
+});
+
+test('question keys distinguish the two operator shapes', () => {
+  assert.equal(logic.questionKey({ a: 42, b: 7 }), '42-7');
+  assert.equal(logic.questionKey({ a: 85, b: 27, c: 18, operator: '-' }), '85-27-18');
+  assert.equal(logic.questionKey({ a: 45, b: 18, c: 27, operator: '+' }), '45-18+27');
+});
+
+test('formatQuestion renders both shapes', () => {
+  assert.equal(logic.formatQuestion({ a: 42, b: 7 }), '42 − 7 = ?');
+  assert.equal(logic.formatQuestion({ a: 85, b: 27, c: 18, operator: '-' }), '85 − 27 − 18 = ?');
+  assert.equal(logic.formatQuestion({ a: 45, b: 18, c: 27, operator: '+' }), '45 − 18 + 27 = ?');
+});
+
+test('the new levels really cover their stated ranges', () => {
+  const level10 = logic.feasibleQuestionsForLevel(10);
+  assert.ok(level10.some((q) => q.a === 50), 'level 10 must include a = 50');
+  assert.ok(level10.some((q) => q.a === 100), 'level 10 must include a = 100');
+  assert.ok(level10.some((q) => q.b === 11), 'level 10 must include b = 11');
+  assert.ok(level10.some((q) => q.c === 11), 'level 10 must include c = 11');
+
+  const level11 = logic.feasibleQuestionsForLevel(11);
+  assert.ok(level11.some((q) => q.b === 50), 'level 11 must include b = 50');
+  assert.ok(level11.some((q) => q.c === 50), 'level 11 must include c = 50');
+  assert.ok(level11.some((q) => q.a === 20), 'level 11 must include a = 20');
+});
+
+test('the mixed levels draw all eleven question types', () => {
+  const stream = logic.createQuestionStream(logic.MIXED_LEVEL_ID, logic.createRandom(99), []);
+  const shapes = new Set();
+  for (let index = 0; index < 3000; index += 1) {
+    const question = stream.next();
+    const shape = question.c === undefined ? 'single' : `multi${question.operator}`;
+    shapes.add(shape);
+  }
+  assert.ok(shapes.has('single'), 'mixed levels must include single-step questions');
+  assert.ok(shapes.has('multi-'), 'mixed levels must include chained subtraction');
+  assert.ok(shapes.has('multi+'), 'mixed levels must include mixed addition');
+});
+
+test('answerOfQuestion is the single source of truth for answers', () => {
+  assert.equal(logic.answerOfQuestion({ a: 42, b: 7 }), 35);
+  assert.equal(logic.answerOfQuestion({ a: 85, b: 27, c: 18, operator: '-' }), 40);
+  assert.equal(logic.answerOfQuestion({ a: 45, b: 18, c: 27, operator: '+' }), 54);
 });
