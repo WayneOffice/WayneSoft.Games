@@ -1183,7 +1183,7 @@
       if (subtrahend === 0) {
         return [];
       }
-      return buildDemoSteps(intermediate, subtrahend).steps;
+      return buildSingleStepDemo(intermediate, subtrahend).steps;
     }
 
     function buildSplitSubtrahendSteps(a, b) {
@@ -1198,7 +1198,7 @@
       };
     }
 
-    function buildDemoSteps(a, b) {
+    function buildSingleStepDemo(a, b) {
       switch (selectDemoStrategy(a, b)) {
         case DEMO_STRATEGY.PLACE_VALUE:
           return buildPlaceValueSteps(a, b);
@@ -1211,6 +1211,74 @@
         default:
           throw new Error(`Unknown demo strategy for ${a} - ${b}`);
       }
+    }
+
+    const STEP_LABEL_FIRST = '第一步';
+    const STEP_LABEL_SECOND = '第二步';
+    const STEP_LABEL_SUBTRACT = '先减';
+    const STEP_LABEL_ADD = '再加';
+    const CARRY_TEN = ONES_PER_TEN;
+
+    // Inside a multi-step demo a sub-step that needs no borrowing is shown as
+    // one line, not as the three-line place-value breakdown. The demo's job
+    // there is to show how the two steps connect; expanding every easy
+    // sub-step would push a wrong answer's overlay to eight or nine lines.
+    function buildSubStepDemo(a, b) {
+      if (!needsBorrowing(a, b)) {
+        return { steps: [`${a} − ${b} = ${a - b}`], result: a - b };
+      }
+      return buildSingleStepDemo(a, b);
+    }
+
+    function buildAdditionSteps(x, y) {
+      const xOnes = onesDigit(x);
+      const yOnes = onesDigit(y);
+      const onesSum = xOnes + yOnes;
+      const total = x + y;
+      if (onesSum < CARRY_TEN) {
+        return { steps: [`${x} + ${y} = ${total}`], result: total };
+      }
+      const xTensValue = x - xOnes;
+      const yTensValue = y - yOnes;
+      const tensSum = xTensValue + yTensValue + CARRY_TEN;
+      return {
+        steps: [
+          `${xOnes} + ${yOnes} = ${onesSum}`,
+          `${xTensValue} + ${yTensValue} + ${CARRY_TEN} = ${tensSum}`,
+          `${tensSum} + ${onesSum - CARRY_TEN} = ${total}`,
+        ],
+        result: total,
+      };
+    }
+
+    function buildMultiStepDemo(question) {
+      const intermediate = question.a - question.b;
+      const firstLabel = question.operator === MIXED_OPERATOR
+        ? STEP_LABEL_SUBTRACT
+        : STEP_LABEL_FIRST;
+      const secondLabel = question.operator === MIXED_OPERATOR
+        ? STEP_LABEL_ADD
+        : STEP_LABEL_SECOND;
+      const first = buildSubStepDemo(question.a, question.b);
+      const second = question.operator === MIXED_OPERATOR
+        ? buildAdditionSteps(intermediate, question.c)
+        : buildSubStepDemo(intermediate, question.c);
+      return {
+        steps: [
+          `${firstLabel}：${first.steps[0]}`,
+          ...first.steps.slice(1),
+          `${secondLabel}：${second.steps[0]}`,
+          ...second.steps.slice(1),
+        ],
+        result: second.result,
+      };
+    }
+
+    function buildDemoSteps(question) {
+      if (question.c === undefined) {
+        return buildSingleStepDemo(question.a, question.b);
+      }
+      return buildMultiStepDemo(question);
     }
 
     const MAX_ANSWER_DIGITS = 2;
