@@ -57,13 +57,9 @@ function lastStepResult(steps) {
   return parseStep(steps[steps.length - 1]).result;
 }
 
-function answerOf(question) {
-  const intermediate = question.a - question.b;
-  if (question.c === undefined) {
-    return intermediate;
-  }
-  return question.operator === '+' ? intermediate + question.c : intermediate - question.c;
-}
+// The answer rule lives in the game, not here: a second copy in the test file
+// would keep passing after the game's rule changed.
+const answerOf = logic.answerOfQuestion;
 
 // The level rules are the oracle here, and they are read straight off each
 // level's own collection rule rather than through needsBorrowing: levels 1-3

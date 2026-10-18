@@ -19,13 +19,9 @@ const LEVEL_RULES = {
   9: ({ a, b }) => a === 100 && b >= 11 && b <= 99,
 };
 
-function answerOf(question) {
-  const intermediate = question.a - question.b;
-  if (question.c === undefined) {
-    return intermediate;
-  }
-  return question.operator === '+' ? intermediate + question.c : intermediate - question.c;
-}
+// The answer rule lives in the game, not here: a second copy in the test file
+// would keep passing after the game's rule changed.
+const answerOf = logic.answerOfQuestion;
 
 function questionKeyOf(question) {
   return logic.questionKey(question);

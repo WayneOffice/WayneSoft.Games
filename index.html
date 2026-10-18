@@ -874,8 +874,10 @@
     const POPE_GLYPH = '⛩';
     const POPE_NAME = '教皇厅';
     const ZODIAC_LEVEL_COUNT = 12;
+    // Two palaces share each row of the climb.
+    const ZODIAC_LEVELS_PER_ROW = 2;
 
-    const ZODIAC_ROW_COUNT = 6;
+    const ZODIAC_ROW_COUNT = ZODIAC_LEVEL_COUNT / ZODIAC_LEVELS_PER_ROW;
     const POPE_ROW = 1;
     const FIRST_ZODIAC_ROW_OFFSET = 1;
 
@@ -904,7 +906,8 @@
       if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
         return POPE_ROW;
       }
-      return ZODIAC_ROW_COUNT + FIRST_ZODIAC_ROW_OFFSET - Math.floor((levelId - 1) / 2);
+      return ZODIAC_ROW_COUNT + FIRST_ZODIAC_ROW_OFFSET
+        - Math.floor((levelId - 1) / ZODIAC_LEVELS_PER_ROW);
     }
 
     const HISTORICAL_WRONG_ANSWER_RATE = 0.3;
@@ -1125,11 +1128,21 @@
       return { a: entry.a, b: entry.b, c: entry.c, operator: entry.operator };
     }
 
-    function formatQuestion(question) {
+    const QUESTION_SUFFIX = ' = ?';
+
+    // The expression and the suffix are separate because the wrong-answer
+    // review lists bare expressions; it used to build the whole question and
+    // strip the suffix back off, which duplicated the literal.
+    function formatQuestionExpression(question) {
+      const firstTwo = `${question.a} ${OPERATOR_GLYPH_SUBTRACT} ${question.b}`;
       if (question.c === undefined) {
-        return `${question.a} − ${question.b} = ?`;
+        return firstTwo;
       }
-      return `${question.a} − ${question.b} ${operatorGlyph(question.operator)} ${question.c} = ?`;
+      return `${firstTwo} ${operatorGlyph(question.operator)} ${question.c}`;
+    }
+
+    function formatQuestion(question) {
+      return `${formatQuestionExpression(question)}${QUESTION_SUFFIX}`;
     }
 
     // The single place the game computes an answer. submitAnswer and showDemo
@@ -1930,6 +1943,10 @@
       const isUnlocked = state !== STAR_MAP_STATE_LOCKED;
       const item = document.createElement('li');
       item.className = `star-node ${state}`;
+      // The connector colouring needs each node's level, and reading it back
+      // off the list position would silently break if the map ever skipped or
+      // reordered a level.
+      item.dataset.levelId = String(levelId);
       if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
         item.classList.add('is-pope');
       }
@@ -1975,12 +1992,26 @@
       if (selectedNode !== null) {
         selectedNode.scrollIntoView({ block: 'center', inline: 'nearest' });
       }
-      window.requestAnimationFrame(renderStarMapLines);
+      scheduleStarMapLines();
       gameState.justClearedLevelId = null;
     }
 
-    function clearStarMapLines() {
-      elementById('star-map-lines').replaceChildren();
+    const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+    let starMapLinesFrameId = null;
+
+    // A window drag fires resize dozens of times a second, and each redraw
+    // rebuilds every connector from the laid-out nodes, so a burst is collapsed
+    // into one frame and the work stays proportional to real size changes. The
+    // map is display:none on the other screens, where every node rect reads
+    // back as zero; drawing there would only produce degenerate paths.
+    function scheduleStarMapLines() {
+      if (starMapLinesFrameId !== null || elementById('screen-map').hidden) {
+        return;
+      }
+      starMapLinesFrameId = window.requestAnimationFrame(() => {
+        starMapLinesFrameId = null;
+        renderStarMapLines();
+      });
     }
 
     const CURVE_BEND_RATIO = 0.16;
@@ -2016,22 +2047,27 @@
     // resources.
     function renderStarMapLines() {
       const svg = elementById('star-map-lines');
-      const frame = elementById('star-map-frame');
-      clearStarMapLines();
-      const frameRect = frame.getBoundingClientRect();
+      const frameRect = elementById('star-map-frame').getBoundingClientRect();
       svg.setAttribute('viewBox', `0 0 ${frameRect.width} ${frameRect.height}`);
-      const nodes = [...elementById('star-map').querySelectorAll('.star-node')];
-      for (let index = 1; index < nodes.length; index += 1) {
-        const from = nodes[index - 1].getBoundingClientRect();
-        const to = nodes[index].getBoundingClientRect();
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', buildConnectorPath(from, to, frameRect));
+      // Every rect is read before any path is written: appending between reads
+      // invalidates layout, so a read-then-write loop forces a synchronous
+      // reflow per connector.
+      const hops = [...elementById('star-map').querySelectorAll('.star-node')]
+        .map((node) => ({
+          levelId: Number(node.dataset.levelId),
+          rect: node.getBoundingClientRect(),
+        }));
+      const fragment = document.createDocumentFragment();
+      for (let index = 1; index < hops.length; index += 1) {
+        const path = document.createElementNS(SVG_NAMESPACE, 'path');
+        path.setAttribute('d', buildConnectorPath(hops[index - 1].rect, hops[index].rect, frameRect));
         path.setAttribute(
           'class',
-          isLevelCleared(index) ? 'star-map-path is-cleared' : 'star-map-path',
+          isLevelCleared(hops[index].levelId) ? 'star-map-path is-cleared' : 'star-map-path',
         );
-        svg.appendChild(path);
+        fragment.appendChild(path);
       }
+      svg.replaceChildren(fragment);
     }
 
     function firstPlayableLevelId() {
@@ -2187,7 +2223,7 @@
       container.setAttribute('aria-label', formatQuestion(question));
       const parts = [
         ...buildDigitNodes(question.a),
-        document.createTextNode(' − '),
+        document.createTextNode(` ${OPERATOR_GLYPH_SUBTRACT} `),
         ...buildDigitNodes(question.b),
       ];
       if (question.c !== undefined) {
@@ -2196,7 +2232,7 @@
           ...buildDigitNodes(question.c),
         );
       }
-      parts.push(document.createTextNode(' = ?'));
+      parts.push(document.createTextNode(QUESTION_SUFFIX));
       container.replaceChildren(...parts);
     }
 
@@ -2688,7 +2724,7 @@
         return RESULT_NO_WRONG_REVIEW;
       }
       const list = gameState.wrongQuestions
-        .map((question) => formatQuestion(question).replace(' = ?', ''))
+        .map((question) => formatQuestionExpression(question))
         .join('、');
       return `${RESULT_WRONG_REVIEW_PREFIX}${list}`;
     }
@@ -2777,7 +2813,7 @@
       document.addEventListener('pointerdown', primeAudioContext);
       document.addEventListener('keydown', primeAudioContext);
       document.addEventListener('keydown', handlePhysicalKey);
-      window.addEventListener('resize', renderStarMapLines);
+      window.addEventListener('resize', scheduleStarMapLines);
       goToLevelMap();
     }
 
