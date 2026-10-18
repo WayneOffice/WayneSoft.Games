@@ -50,6 +50,8 @@ const EXPORTED_NAMES = [
   'formatQuestion',
   'toQuestion',
   'answerOfQuestion',
+  'CHAIN_OPERATOR',
+  'MIXED_OPERATOR',
   'ZODIAC_GLYPHS',
   'ZODIAC_NAMES',
   'POPE_GLYPH',

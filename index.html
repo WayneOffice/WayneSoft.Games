@@ -1043,36 +1043,53 @@
       return items[Math.floor(random() * items.length)];
     }
 
-    // Uniform over the level's feasible questions, never over minuends: picking
-    // the minuend first would over-weight small minuends, which have fewer
-    // feasible subtrahends.
-    function drawFromLevel(levelId, random, usedKeys) {
-      const questions = feasibleQuestionsForLevel(levelId);
-      const available = questions.filter((question) => !usedKeys.has(questionKey(question)));
-      return pickRandom(available.length > 0 ? available : questions, random);
-    }
-
-    function drawMixedQuestion(random, usedKeys, historicalWrongAnswers) {
-      const canUseHistorical = historicalWrongAnswers.length > 0
-        && random() < HISTORICAL_WRONG_ANSWER_RATE;
-      if (canUseHistorical) {
-        const candidate = pickRandom(historicalWrongAnswers, random);
-        const question = toQuestion(candidate);
-        if (!usedKeys.has(questionKey(question))) {
-          return question;
-        }
-      }
-      return drawFromLevel(pickRandom(MIXED_LEVEL_IDS, random), random, usedKeys);
-    }
-
     function createQuestionStream(levelId, random, historicalWrongAnswers) {
       const usedKeys = new Set();
-      const isMixed = levelId === MIXED_LEVEL_ID || levelId === TIMED_CHALLENGE_LEVEL_ID;
+      const remainingByLevel = new Map();
+      const isMixed = levelId === MIXED_LEVEL_ID
+        || levelId === TIMED_CHALLENGE_LEVEL_ID;
+
+      function remainingForLevel(targetLevelId) {
+        if (!remainingByLevel.has(targetLevelId)) {
+          remainingByLevel.set(targetLevelId, feasibleQuestionsForLevel(targetLevelId).slice());
+        }
+        return remainingByLevel.get(targetLevelId);
+      }
+
+      // Swap-remove keeps the draw uniform over what is left while avoiding a
+      // full-array filter per question. Levels 10 and 11 hold tens of
+      // thousands of questions, so filtering each time made the test suite
+      // roughly ninety times slower than the ten-level game.
+      function takeRandom(targetLevelId) {
+        const remaining = remainingForLevel(targetLevelId);
+        if (remaining.length === 0) {
+          return pickRandom(feasibleQuestionsForLevel(targetLevelId), random);
+        }
+        const index = Math.floor(random() * remaining.length);
+        const question = remaining[index];
+        remaining[index] = remaining[remaining.length - 1];
+        remaining.pop();
+        return question;
+      }
+
       return {
         next() {
-          const question = isMixed
-            ? drawMixedQuestion(random, usedKeys, historicalWrongAnswers)
-            : drawFromLevel(levelId, random, usedKeys);
+          let question;
+          if (isMixed) {
+            const canUseHistorical = historicalWrongAnswers.length > 0
+              && random() < HISTORICAL_WRONG_ANSWER_RATE;
+            if (canUseHistorical) {
+              const historical = toQuestion(pickRandom(historicalWrongAnswers, random));
+              if (!usedKeys.has(questionKey(historical))) {
+                question = historical;
+              }
+            }
+            if (question === undefined) {
+              question = takeRandom(pickRandom(MIXED_LEVEL_IDS, random));
+            }
+          } else {
+            question = takeRandom(levelId);
+          }
           usedKeys.add(questionKey(question));
           return question;
         },

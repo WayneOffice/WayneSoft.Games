@@ -15,7 +15,7 @@ const LEVEL_RULES = {
   5: ({ a, b }) => a >= 21 && a <= 99 && a % 10 !== 0 && b >= 1 && b <= 9 && a % 10 < b,
   6: ({ a, b }) => a >= 20 && a <= 90 && a % 10 === 0 && b >= 1 && b <= 9,
   7: ({ a, b }) => a >= 21 && a <= 99 && a % 10 !== 0 && b >= 11 && b < a && a % 10 < b % 10,
-  8: ({ a, b }) => a >= 30 && a <= 100 && a % 10 === 0 && b >= 11 && b < a && a % 10 < b % 10,
+  8: ({ a, b }) => a >= 30 && a <= 90 && a % 10 === 0 && b >= 11 && b < a && a % 10 < b % 10,
   9: ({ a, b }) => a === 100 && b >= 11 && b <= 99,
 };
 
@@ -31,7 +31,19 @@ function questionKeyOf(question) {
   return logic.questionKey(question);
 }
 
-for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
+function classifyLevelType(question) {
+  if (question.c !== undefined) {
+    return question.operator === logic.MIXED_OPERATOR ? 11 : 10;
+  }
+  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+    if (LEVEL_RULES[levelId](question)) {
+      return levelId;
+    }
+  }
+  return undefined;
+}
+
+for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
   test(`level ${levelId} feasible pairs all satisfy the level rule`, () => {
     const pairs = logic.feasibleQuestionsForLevel(levelId);
     assert.ok(pairs.length > 0, `level ${levelId} must have feasible pairs`);
@@ -101,23 +113,22 @@ test('mixed levels draw from every level type over many draws', () => {
 });
 
 test('mixed levels draw each level type with roughly equal probability', () => {
-  // The spec requires the eight level types to be equally likely. Sampling
-  // uniformly over the union of pair sets would instead weight each type by
-  // its pair count, and level 4 (36 pairs out of 5184) would show up about
-  // 0.7% of the time, so the child would effectively never practise it.
+  // The spec requires the eleven level types to be equally likely. Sampling
+  // uniformly over the union of question sets would instead weight each type
+  // by its size, and level 4 (36 questions out of more than 140,000) would
+  // show up about 0.02% of the time, so the child would effectively never
+  // practise it.
   const stream = logic.createQuestionStream(logic.MIXED_LEVEL_ID, logic.createRandom(12345), []);
   const drawCount = 8000;
   const typeCounts = new Map();
   for (let i = 0; i < drawCount; i += 1) {
     const question = stream.next();
-    for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
-      if (LEVEL_RULES[levelId](question)) {
-        typeCounts.set(levelId, (typeCounts.get(levelId) ?? 0) + 1);
-        break;
-      }
+    const levelId = classifyLevelType(question);
+    if (levelId !== undefined) {
+      typeCounts.set(levelId, (typeCounts.get(levelId) ?? 0) + 1);
     }
   }
-  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
+  for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) {
     const share = (typeCounts.get(levelId) ?? 0) / drawCount;
     assert.ok(
       share >= 0.05 && share <= 0.2,
