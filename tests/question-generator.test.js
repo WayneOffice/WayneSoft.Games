@@ -239,6 +239,19 @@ test('the new levels really cover their stated ranges', () => {
   assert.ok(level11.some((q) => q.b === 50), 'level 11 must include b = 50');
   assert.ok(level11.some((q) => q.c === 50), 'level 11 must include c = 50');
   assert.ok(level11.some((q) => q.a === 20), 'level 11 must include a = 20');
+
+  // Presence checks pass for any wider range, so pin the upper and lower
+  // bounds too — spec §4.3 gives level 10 operands a ceiling of 39 and level
+  // 11 a ceiling of 50, and that difference is the only thing separating them.
+  assert.ok(level10.every((q) => q.b <= 39), 'level 10 subtrahend must not exceed 39');
+  assert.ok(level10.every((q) => q.c <= 39), 'level 10 third operand must not exceed 39');
+  assert.ok(level10.every((q) => q.a >= 50), 'level 10 minuend must be at least 50');
+  assert.equal(Math.max(...level10.map((q) => q.a)), 100, 'level 10 must reach a = 100');
+
+  assert.ok(level11.every((q) => q.a <= 99), 'level 11 minuend must not exceed 99');
+  assert.ok(level11.every((q) => q.b <= 50), 'level 11 subtrahend must not exceed 50');
+  assert.ok(level11.every((q) => q.c <= 50), 'level 11 third operand must not exceed 50');
+  assert.ok(level11.every((q) => q.a >= 20), 'level 11 minuend must be at least 20');
 });
 
 test('the mixed levels draw all eleven question types', () => {
