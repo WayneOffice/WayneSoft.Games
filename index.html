@@ -1062,14 +1062,21 @@
       // roughly ninety times slower than the ten-level game.
       function takeRandom(targetLevelId) {
         const remaining = remainingForLevel(targetLevelId);
-        if (remaining.length === 0) {
-          return pickRandom(feasibleQuestionsForLevel(targetLevelId), random);
+        // Every drawn question leaves the pool, whether or not it is returned:
+        // a question already served this run must not come back through a
+        // different level's pool. Levels 2 and 3 overlap by 352 questions, so
+        // consulting usedKeys only for the historical branch let the same
+        // question appear twice in one mixed run.
+        while (remaining.length > 0) {
+          const index = Math.floor(random() * remaining.length);
+          const question = remaining[index];
+          remaining[index] = remaining[remaining.length - 1];
+          remaining.pop();
+          if (!usedKeys.has(questionKey(question))) {
+            return question;
+          }
         }
-        const index = Math.floor(random() * remaining.length);
-        const question = remaining[index];
-        remaining[index] = remaining[remaining.length - 1];
-        remaining.pop();
-        return question;
+        return pickRandom(feasibleQuestionsForLevel(targetLevelId), random);
       }
 
       return {

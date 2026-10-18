@@ -101,15 +101,12 @@ test('mixed levels draw from every level type over many draws', () => {
   const stream = logic.createQuestionStream(logic.MIXED_LEVEL_ID, logic.createRandom(7), []);
   const touchedLevels = new Set();
   for (let i = 0; i < 2000; i += 1) {
-    const question = stream.next();
-    for (const levelId of [1, 2, 3, 4, 5, 6, 7, 8]) {
-      if (LEVEL_RULES[levelId](question)) {
-        touchedLevels.add(levelId);
-        break;
-      }
+    const levelId = classifyLevelType(stream.next());
+    if (levelId !== undefined) {
+      touchedLevels.add(levelId);
     }
   }
-  assert.equal(touchedLevels.size, 8, `expected all 8 level types, saw ${[...touchedLevels].join(',')}`);
+  assert.equal(touchedLevels.size, 11, `expected all 11 level types, saw ${[...touchedLevels].join(',')}`);
 });
 
 test('mixed levels draw each level type with roughly equal probability', () => {
