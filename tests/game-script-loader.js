@@ -53,6 +53,7 @@ const EXPORTED_NAMES = [
   'answerOfQuestion',
   'CHAIN_OPERATOR',
   'MIXED_OPERATOR',
+  'operatorGlyph',
   'ZODIAC_GLYPHS',
   'ZODIAC_NAMES',
   'POPE_GLYPH',

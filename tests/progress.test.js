@@ -326,3 +326,8 @@ test('a zero is only accepted when the question allows it, and completes the inp
   assert.equal(logic.appendDigit('0', 1, true), '0');
   assert.equal(logic.appendDigit('', 4, true), '4');
 });
+
+test('the operator glyph mapping lives in exactly one place', () => {
+  assert.equal(logic.operatorGlyph(logic.MIXED_OPERATOR), '+');
+  assert.equal(logic.operatorGlyph(logic.CHAIN_OPERATOR), '−');
+});

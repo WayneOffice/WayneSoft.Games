@@ -928,6 +928,16 @@
     const MAX_MIXED_OPERAND = 50;
     const CHAIN_OPERATOR = '-';
     const MIXED_OPERATOR = '+';
+    const OPERATOR_GLYPH_ADD = '+';
+    const OPERATOR_GLYPH_SUBTRACT = '−';
+
+    // The one place an operator becomes the character a child reads. Only the
+    // display sites call this; answerOfQuestion and buildMultiStepDemo branch
+    // on the operator to pick behaviour, so routing them through a glyph
+    // helper would couple arithmetic to presentation.
+    function operatorGlyph(operator) {
+      return operator === MIXED_OPERATOR ? OPERATOR_GLYPH_ADD : OPERATOR_GLYPH_SUBTRACT;
+    }
 
     const feasibleQuestionsCache = new Map();
 
@@ -1119,8 +1129,7 @@
       if (question.c === undefined) {
         return `${question.a} − ${question.b} = ?`;
       }
-      const operatorGlyph = question.operator === MIXED_OPERATOR ? '+' : '−';
-      return `${question.a} − ${question.b} ${operatorGlyph} ${question.c} = ?`;
+      return `${question.a} − ${question.b} ${operatorGlyph(question.operator)} ${question.c} = ?`;
     }
 
     // The single place the game computes an answer. submitAnswer and showDemo
@@ -1841,9 +1850,10 @@
       return CHALLENGE_BEST_SCORE_TEMPLATE.replace('{score}', String(bestScoreFor(levelId)));
     }
 
-    // The timed challenge never earns stars (spec §3.2), so its "played" state
-    // has to come from the best score instead — judged on stars alone its node
-    // would pulse as "current" forever, however many times the child ran it.
+    // The timed challenge never earns stars (spec §3.2), so stars cannot carry
+    // its "played" state — judged on stars alone its node would pulse as
+    // "current" forever, however many times the child ran it. That is exactly
+    // why the progress object keeps a challengePlayed flag.
     function isLevelCleared(levelId) {
       if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
         return gameState.progress.challengePlayed === true;
@@ -2181,8 +2191,10 @@
         ...buildDigitNodes(question.b),
       ];
       if (question.c !== undefined) {
-        const operatorGlyph = question.operator === MIXED_OPERATOR ? ' + ' : ' − ';
-        parts.push(document.createTextNode(operatorGlyph), ...buildDigitNodes(question.c));
+        parts.push(
+          document.createTextNode(` ${operatorGlyph(question.operator)} `),
+          ...buildDigitNodes(question.c),
+        );
       }
       parts.push(document.createTextNode(' = ?'));
       container.replaceChildren(...parts);
