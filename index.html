@@ -1971,7 +1971,7 @@
         item.classList.add('is-pope');
       }
       item.style.gridRow = String(starNodeRow(levelId));
-      item.style.setProperty('--node-ratio', `${starNodeRatio(levelId) * 100}%`);
+      item.style.setProperty('--node-ratio', `${starNodeRatio(levelId) * PERCENT_SCALE}%`);
       if (levelId === gameState.justClearedLevelId) {
         item.classList.add(STAR_MAP_STATE_JUST_CLEARED);
       }
@@ -2658,11 +2658,17 @@
       playSound(SOUND.WRONG);
       gameState.combo = 0;
       renderCombo();
-      if (!gameState.isRetrying && !isTimedChallenge()) {
+      if (!gameState.isRetrying) {
         gameState.answeredCount += 1;
         gameState.wrongQuestions.push(gameState.currentQuestion);
-        mergeAnswerIntoProgress(gameState.progress, gameState.currentQuestion, false);
-        saveProgress(gameState.progress);
+        // The timed challenge must not feed the persistent pool (spec §5.6),
+        // but its own run still needs an accurate review list — those are two
+        // different lists, and conflating them told the child "这一关全对"
+        // after every challenge however many they missed.
+        if (!isTimedChallenge()) {
+          mergeAnswerIntoProgress(gameState.progress, gameState.currentQuestion, false);
+          saveProgress(gameState.progress);
+        }
       }
       isFeedbackPending = true;
       flashQuestion(FEEDBACK_CLASS_WRONG);
