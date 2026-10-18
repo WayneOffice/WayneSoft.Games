@@ -311,3 +311,18 @@ test('malformed multi-step entries are dropped', () => {
     { a: 85, b: 27, c: 18, operator: '-', count: 2 },
   ]);
 });
+
+test('only chained-subtraction questions may answer zero', () => {
+  assert.equal(logic.canQuestionAnswerZero({ a: 42, b: 7 }), false);
+  assert.equal(logic.canQuestionAnswerZero({ a: 45, b: 18, c: 27, operator: '+' }), false);
+  assert.equal(logic.canQuestionAnswerZero({ a: 50, b: 25, c: 25, operator: '-' }), true);
+});
+
+test('a zero is only accepted when the question allows it, and completes the input', () => {
+  assert.equal(logic.appendDigit('', 0, false), '');
+  assert.equal(logic.appendDigit('', 0, true), '0');
+  // Spec §5.4: a zero answer is complete on its own, so a second digit is
+  // refused rather than producing "01".
+  assert.equal(logic.appendDigit('0', 1, true), '0');
+  assert.equal(logic.appendDigit('', 4, true), '4');
+});

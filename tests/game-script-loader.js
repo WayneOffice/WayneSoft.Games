@@ -72,6 +72,7 @@ const EXPORTED_NAMES = [
   'mergeAnswerIntoProgress',
   'recordLevelResult',
   'recordChallengeScore',
+  'canQuestionAnswerZero',
   'appendDigit',
   'removeLastDigit',
   'canSubmitAnswer',

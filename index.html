@@ -1709,14 +1709,25 @@
       recordBestScore(progress, levelId, correctCount);
     }
 
-    function appendDigit(currentInput, digit) {
+    // Whether the question itself can have zero for an answer. This is a
+    // property of the question, not of the level: levels 12 and 13 draw
+    // level-10 questions, and gating by level would leave an unenterable
+    // question in those mixed levels.
+    function canQuestionAnswerZero(question) {
+      return question.c !== undefined && question.operator === CHAIN_OPERATOR;
+    }
+
+    function appendDigit(currentInput, digit, isZeroAllowed) {
       if (currentInput.length >= MAX_ANSWER_DIGITS) {
         return currentInput;
       }
-      // The difference is never zero on any level, so a leading zero is
-      // always a slip and is dropped rather than shown as "07".
-      if (currentInput.length === 0 && digit === 0) {
+      // Spec §5.4: a zero answer is complete on its own, so a second digit is
+      // refused rather than producing "01".
+      if (currentInput === '0') {
         return currentInput;
+      }
+      if (currentInput.length === 0 && digit === 0) {
+        return isZeroAllowed ? '0' : currentInput;
       }
       return currentInput + String(digit);
     }
@@ -1824,11 +1835,10 @@
       if (levelId !== TIMED_CHALLENGE_LEVEL_ID) {
         return formatStars(starsFor(levelId));
       }
-      const bestScore = bestScoreFor(levelId);
-      if (bestScore === 0) {
+      if (gameState.progress.challengePlayed !== true) {
         return CHALLENGE_UNPLAYED_TEXT;
       }
-      return CHALLENGE_BEST_SCORE_TEMPLATE.replace('{score}', String(bestScore));
+      return CHALLENGE_BEST_SCORE_TEMPLATE.replace('{score}', String(bestScoreFor(levelId)));
     }
 
     // The timed challenge never earns stars (spec §3.2), so its "played" state
@@ -1836,7 +1846,7 @@
     // would pulse as "current" forever, however many times the child ran it.
     function isLevelCleared(levelId) {
       if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
-        return bestScoreFor(levelId) > 0;
+        return gameState.progress.challengePlayed === true;
       }
       return starsFor(levelId) > 0;
     }
@@ -2165,12 +2175,17 @@
       const question = gameState.currentQuestion;
       const container = elementById('question-text');
       container.setAttribute('aria-label', formatQuestion(question));
-      container.replaceChildren(
+      const parts = [
         ...buildDigitNodes(question.a),
         document.createTextNode(' − '),
         ...buildDigitNodes(question.b),
-        document.createTextNode(' = ?'),
-      );
+      ];
+      if (question.c !== undefined) {
+        const operatorGlyph = question.operator === MIXED_OPERATOR ? ' + ' : ' − ';
+        parts.push(document.createTextNode(operatorGlyph), ...buildDigitNodes(question.c));
+      }
+      parts.push(document.createTextNode(' = ?'));
+      container.replaceChildren(...parts);
     }
 
     function renderQuestion() {
@@ -2213,7 +2228,11 @@
     }
 
     function handleDigitInput(digit) {
-      gameState.currentInput = appendDigit(gameState.currentInput, digit);
+      gameState.currentInput = appendDigit(
+        gameState.currentInput,
+        digit,
+        canQuestionAnswerZero(gameState.currentQuestion),
+      );
       renderAnswerDisplay();
     }
 
@@ -2253,11 +2272,15 @@
     const STRONG_HINT_CLASS = 'is-strong-hint';
     const HINT_BORROW_TEMPLATE = '个位 {ones} 减 {subtrahendOnes} 不够减，要向十位借 1 个十';
     const HINT_PLAIN_TEXT = '先算个位，再算十位';
+    const HINT_MULTI_STEP_TEXT = '先算前两个数的差，再把结果和第三个数相减/相加';
 
     // needsBorrowing lives in the game-logic block; do not redefine it here —
     // both blocks share the page's global scope and a second definition would
     // silently overwrite the one the demo generator uses.
     function buildStrongHintText(question) {
+      if (question.c !== undefined) {
+        return HINT_MULTI_STEP_TEXT;
+      }
       const subtrahendOnes = subtrahendOnesDigit(question.b);
       if (!needsBorrowing(question.a, question.b)) {
         return HINT_PLAIN_TEXT;
@@ -2418,6 +2441,7 @@
     }
 
     function finishTimedChallenge() {
+      gameState.progress.challengePlayed = true;
       recordChallengeScore(gameState.progress, TIMED_CHALLENGE_LEVEL_ID, gameState.correctCount);
       saveProgress(gameState.progress);
       const bestScore = bestScoreFor(TIMED_CHALLENGE_LEVEL_ID);
@@ -2530,7 +2554,7 @@
         return;
       }
       const question = gameState.currentQuestion;
-      const isCorrect = Number(gameState.currentInput) === question.a - question.b;
+      const isCorrect = Number(gameState.currentInput) === answerOfQuestion(question);
       clearHintTimers();
       if (isCorrect) {
         handleCorrectAnswer();
@@ -2564,7 +2588,7 @@
       playSound(SOUND.WRONG);
       gameState.combo = 0;
       renderCombo();
-      if (!gameState.isRetrying) {
+      if (!gameState.isRetrying && !isTimedChallenge()) {
         gameState.answeredCount += 1;
         gameState.wrongQuestions.push(gameState.currentQuestion);
         mergeAnswerIntoProgress(gameState.progress, gameState.currentQuestion, false);
@@ -2573,8 +2597,9 @@
       isFeedbackPending = true;
       flashQuestion(FEEDBACK_CLASS_WRONG);
       if (isTimedChallenge()) {
-        const answer = gameState.currentQuestion.a - gameState.currentQuestion.b;
-        elementById('hint-text').textContent = DEMO_ANSWER_TEMPLATE.replace('{answer}', String(answer));
+        const answer = answerOfQuestion(gameState.currentQuestion);
+        elementById('hint-text').textContent =
+          DEMO_ANSWER_TEMPLATE.replace('{answer}', String(answer));
         scheduleNextQuestion(CHALLENGE_FEEDBACK_DELAY_MS);
         return;
       }
@@ -2590,10 +2615,10 @@
       // sees it, so it gets its own line at the top of the card.
       elementById('demo-title').textContent = DEMO_ANSWER_TEMPLATE.replace(
         '{answer}',
-        String(question.a - question.b),
+        String(answerOfQuestion(question)),
       );
       list.replaceChildren();
-      for (const step of buildDemoSteps(question.a, question.b).steps) {
+      for (const step of buildDemoSteps(question).steps) {
         const item = document.createElement('li');
         item.textContent = step;
         list.appendChild(item);
@@ -2651,7 +2676,7 @@
         return RESULT_NO_WRONG_REVIEW;
       }
       const list = gameState.wrongQuestions
-        .map((question) => `${question.a} − ${question.b}`)
+        .map((question) => formatQuestion(question).replace(' = ?', ''))
         .join('、');
       return `${RESULT_WRONG_REVIEW_PREFIX}${list}`;
     }
