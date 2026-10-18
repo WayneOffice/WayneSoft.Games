@@ -272,3 +272,27 @@ test('answerOfQuestion is the single source of truth for answers', () => {
   assert.equal(logic.answerOfQuestion({ a: 85, b: 27, c: 18, operator: '-' }), 40);
   assert.equal(logic.answerOfQuestion({ a: 45, b: 18, c: 27, operator: '+' }), 54);
 });
+
+test('the zodiac map places levels bottom-up in a winding climb', () => {
+  assert.equal(logic.starNodeRatio(1), 0.22);
+  assert.equal(logic.starNodeRatio(12), 0.66);
+  assert.equal(logic.starNodeRatio(13), 0.5);
+  for (let levelId = 1; levelId <= logic.ZODIAC_LEVEL_COUNT; levelId += 1) {
+    const ratio = logic.starNodeRatio(levelId);
+    assert.ok(
+      ratio > 0 && ratio < 1,
+      `level ${levelId} must sit strictly inside the frame, got ${ratio}`,
+    );
+  }
+  // Level 1 sits in the last row, level 12 in the first row below the Pope.
+  assert.equal(logic.starNodeRow(1), 7);
+  assert.equal(logic.starNodeRow(2), 7);
+  assert.equal(logic.starNodeRow(3), 6);
+});
+
+test('each zodiac level has a glyph and a name', () => {
+  assert.equal(logic.ZODIAC_GLYPHS.length, logic.ZODIAC_LEVEL_COUNT);
+  assert.equal(logic.ZODIAC_NAMES.length, logic.ZODIAC_LEVEL_COUNT);
+  assert.equal(logic.ZODIAC_GLYPHS[0], '♈');
+  assert.equal(logic.ZODIAC_NAMES[11], '双鱼宫');
+});

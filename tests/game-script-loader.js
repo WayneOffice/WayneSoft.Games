@@ -58,6 +58,8 @@ const EXPORTED_NAMES = [
   'POPE_GLYPH',
   'POPE_NAME',
   'ZODIAC_LEVEL_COUNT',
+  'starNodeRatio',
+  'starNodeRow',
   'buildDemoSteps',
   'needsBorrowing',
   'computeStars',

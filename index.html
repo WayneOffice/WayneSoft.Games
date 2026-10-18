@@ -67,10 +67,10 @@
 
       .screen {
         width: 100%;
-        /* Wide enough to hold the whole star map: 10 nodes x 64px + 9 gaps x
-           28px + the map's own 16px padding = 908px. At 760px the map always
-           scrolled, which put a native scrollbar across the space-themed home
-           screen. Narrow viewports still scroll (see .star-map-scroll). */
+        /* The star map is a portrait grid capped at 420px (.star-map-frame),
+           so the screen no longer has to be wide to hold it. The generous cap
+           is kept because all three screens share it and the question area
+           wants the room on a landscape tablet. */
         max-width: 940px;
         display: flex;
         flex-direction: column;
@@ -118,8 +118,11 @@
 
       .star-map-scroll {
         width: 100%;
-        overflow-x: auto;
-        padding: 26px 4px 4px;
+        max-height: 58vh;
+        overflow-y: auto;
+        /* Top padding reserves room for the rocket, which sits at top: -22px
+           on the selected node; without it the Pope's rocket is clipped. */
+        padding: 26px 4px 8px;
         /* Hide the native bar: on Windows it is a bright grey slab that fights
            the space theme, and on a tablet it is meaningless. The map still
            scrolls by drag/swipe, and renderLevelMap centres the selected node
@@ -132,45 +135,80 @@
         display: none;
       }
 
-      /* 10 nodes x 64px + 9 gaps x 28px = 892px, wider than .screen's 760px,
-         so the star map scrolls horizontally on every viewport. That is
-         deliberate: the path is meant to be travelled along, not fitted.
-         The connector spans exactly the gap (left: -28px, width: 28px), so
-         it reads as a line between two planets rather than a dash painted
-         over one. */
+      .star-map-frame {
+        position: relative;
+        max-width: 420px;
+        margin: 0 auto;
+      }
+
+      .star-map-lines {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+
+      .star-map-path {
+        fill: none;
+        stroke: var(--space-line);
+        stroke-width: 2;
+        stroke-linecap: round;
+      }
+
+      .star-map-path.is-cleared {
+        stroke: var(--glow-cyan);
+        filter: drop-shadow(0 0 4px rgb(var(--glow-cyan-rgb) / 0.8));
+      }
+
+      /* One column, one row per starNodeRow step, so a row is exactly as tall as
+         the palaces standing in it. Horizontal position comes from the per-node
+         --node-ratio (starNodeRatio) as a left margin, and translateX(-50%)
+         centres the palace on that point — which is what lets the two palaces in
+         a row sit at uneven spacings and read as a climb up a hillside rather
+         than two columns. */
       .star-map {
+        position: relative;
         list-style: none;
         margin: 0;
-        padding: 0 8px;
-        display: flex;
-        align-items: flex-start;
-        gap: 28px;
-        min-width: max-content;
+        padding: 0;
+        display: grid;
+        grid-template-columns: 1fr;
+        row-gap: 10px;
       }
 
       .star-node {
-        width: var(--touch-target);
+        /* Every palace lives in the one explicit column, so the two sharing a
+           row overlap in the same cell and are separated purely by their
+           ratios. Without this, auto-placement opens an implicit second column
+           for the second node of each row, and its ratio margin then resolves
+           against that narrow column instead of the frame. */
+        grid-column: 1;
+        justify-self: start;
+        /* The ratio is set per node from starNodeRatio(); translating by half
+           the node's own width centres it on that point. */
+        margin-left: var(--node-ratio);
+        transform: translateX(-50%);
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 3px;
+        gap: 2px;
         position: relative;
       }
 
-      .star-node + .star-node::before {
-        content: "";
-        position: absolute;
-        top: 31px;
-        left: -28px;
-        width: 28px;
-        height: 2px;
-        border-radius: 1px;
-        background: var(--space-line);
+      .star-node.is-pope {
+        margin-bottom: 8px;
       }
 
-      .star-node.is-cleared + .star-node::before {
-        background: var(--glow-cyan);
-        box-shadow: var(--glow-soft);
+      .star-node-glyph {
+        font-size: 28px;
+        line-height: 1;
+      }
+
+      .star-node-name {
+        font-size: 12px;
+        color: var(--text-dim);
+        white-space: nowrap;
       }
 
       .star-node-ship {
@@ -186,23 +224,35 @@
       }
 
       .star-node-button {
-        width: var(--touch-target);
-        height: var(--touch-target);
-        border-radius: 50%;
-        border: 3px solid var(--space-line);
-        background: var(--space-panel);
-        color: var(--text-bright);
-        font-size: 26px;
+        /* min-width, not width: the constellation name (白羊宫) is wider than
+           64px and must not overflow the rounded border. */
+        min-width: var(--touch-target);
+        min-height: var(--touch-target);
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
+        gap: 0;
+        padding: 6px 10px;
+        border-radius: 18px;
+        border: 2px solid var(--space-line);
+        background: var(--space-panel);
+        color: var(--text-bright);
         cursor: pointer;
-        transition: transform 0.18s ease, box-shadow 0.18s ease;
+      }
+
+      .star-node.is-pope .star-node-button {
+        width: auto;
+        min-width: calc(var(--touch-target) * 2);
+        height: var(--touch-target);
+        flex-direction: row;
+        gap: 8px;
+        padding: 0 18px;
       }
 
       .star-node.is-cleared .star-node-button {
-        border-color: var(--glow-cyan);
-        box-shadow: var(--glow-soft);
+        border-color: var(--glow-amber);
+        box-shadow: 0 0 18px rgb(var(--glow-amber-rgb) / 0.55);
       }
 
       .star-node.is-current .star-node-button {
@@ -262,6 +312,16 @@
         flex-direction: column;
         align-items: center;
         gap: 12px;
+      }
+
+      /* The map is tall; a detail card that scrolls with it can leave the
+         start button below the fold right after the child picks a node near
+         the top. Pin it to the bottom of the viewport instead, so 开始 is
+         always reachable. */
+      .level-detail {
+        position: sticky;
+        bottom: 0;
+        z-index: 5;
       }
 
       .level-detail-heading {
@@ -670,13 +730,9 @@
            var(--touch-target), and spec §7 sets a hard ≥64px floor for a
            finger on a tablet — the narrowest viewport is exactly where a
            child is most likely to mis-tap, so shrinking there is backwards.
-           The map scrolls horizontally instead.
-
-           For the same reason the connector geometry and the node number are
-           NOT overridden either: Task 10 tuned them to a 64px node
-           (`top: 31px; left: -28px`), and the number is a normal flow child,
-           not an absolutely positioned one. Narrowing anything here would put
-           the connector back to overlapping the planet. */
+           The winding map fits the narrowest viewport as it is, and the
+           connector curves are recomputed from the laid-out nodes on resize
+           (renderStarMapLines), so there is nothing to re-tune here. */
 
         .level-detail-heading {
           font-size: 19px;
@@ -706,8 +762,11 @@
       <h1 class="app-title">🌌 减法星球</h1>
       <p class="app-subtitle">沿着星图，一关一关往前闯</p>
     </header>
-    <div class="star-map-scroll">
-      <ol id="star-map" class="star-map"></ol>
+    <div id="star-map-scroll" class="star-map-scroll">
+      <div id="star-map-frame" class="star-map-frame">
+        <svg id="star-map-lines" class="star-map-lines" aria-hidden="true"></svg>
+        <ol id="star-map" class="star-map"></ol>
+      </div>
     </div>
     <section id="level-detail" class="level-detail"></section>
   </main>
@@ -798,6 +857,38 @@
     const POPE_GLYPH = '⛩';
     const POPE_NAME = '教皇厅';
     const ZODIAC_LEVEL_COUNT = 12;
+
+    const ZODIAC_ROW_COUNT = 6;
+    const POPE_ROW = 1;
+    const FIRST_ZODIAC_ROW_OFFSET = 1;
+
+    // Hand-tuned so consecutive palaces are not evenly spaced: the eye reads a
+    // winding climb rather than a two-column ladder. Index is levelId - 1.
+    const ZODIAC_NODE_RATIO = [
+      0.22, 0.64, 0.18, 0.78, 0.30, 0.72,
+      0.16, 0.60, 0.24, 0.84, 0.20, 0.66,
+    ];
+    const POPE_NODE_RATIO = 0.5;
+
+    // The twelve zodiac levels climb the map: level 1 sits in the bottom row and
+    // level 12 in the row below the Pope, with the Pope's chamber alone above
+    // them. Rows give the climb; the ratio gives each palace its own point
+    // across the frame, so the two palaces in a row are never the same distance
+    // apart as the pair below. Both are pure so the grid can be written straight
+    // into the node's inline style.
+    function starNodeRatio(levelId) {
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        return POPE_NODE_RATIO;
+      }
+      return ZODIAC_NODE_RATIO[levelId - 1];
+    }
+
+    function starNodeRow(levelId) {
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        return POPE_ROW;
+      }
+      return ZODIAC_ROW_COUNT + FIRST_ZODIAC_ROW_OFFSET - Math.floor((levelId - 1) / 2);
+    }
 
     const HISTORICAL_WRONG_ANSWER_RATE = 0.3;
 
@@ -1689,7 +1780,6 @@
       return STAR_FILLED.repeat(starCount) + STAR_EMPTY.repeat(MAX_STARS - starCount);
     }
 
-    const PLANET_ICONS = ['🪐', '🌕', '⭐', '☄️', '🌠', '🔭', '🚀', '🛸', '🌌', '👽'];
     const SHIP_ICON = '🚀';
     const STAR_MAP_STATE_CLEARED = 'is-cleared';
     const STAR_MAP_STATE_CURRENT = 'is-current';
@@ -1743,11 +1833,30 @@
       return STAR_MAP_STATE_LOCKED;
     }
 
+    function starNodeGlyph(levelId) {
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        return POPE_GLYPH;
+      }
+      return ZODIAC_GLYPHS[levelId - 1];
+    }
+
+    function starNodeName(levelId) {
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        return POPE_NAME;
+      }
+      return ZODIAC_NAMES[levelId - 1];
+    }
+
     function buildStarMapNode(levelId) {
       const state = levelState(levelId);
       const isUnlocked = state !== STAR_MAP_STATE_LOCKED;
       const item = document.createElement('li');
       item.className = `star-node ${state}`;
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        item.classList.add('is-pope');
+      }
+      item.style.gridRow = String(starNodeRow(levelId));
+      item.style.setProperty('--node-ratio', `${starNodeRatio(levelId) * 100}%`);
       if (levelId === gameState.justClearedLevelId) {
         item.classList.add(STAR_MAP_STATE_JUST_CLEARED);
       }
@@ -1759,22 +1868,32 @@
         item.appendChild(ship);
       }
 
+      // The whole node is the tap target: a 7-year-old is more likely to tap
+      // the constellation name they can read than the small glyph.
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'star-node-button';
       button.disabled = !isUnlocked;
-      button.setAttribute('aria-label', `第 ${levelId} 关 ${LEVEL_TITLES[levelId]}`);
+      button.setAttribute(
+        'aria-label',
+        `第 ${levelId} 关 ${starNodeName(levelId)} ${LEVEL_TITLES[levelId]}`,
+      );
       button.addEventListener('click', () => selectLevel(levelId));
 
-      const icon = document.createElement('span');
-      icon.textContent = isUnlocked ? PLANET_ICONS[levelId - 1] : LOCKED_ICON;
-      button.appendChild(icon);
-      item.appendChild(button);
+      const glyph = document.createElement('span');
+      glyph.className = 'star-node-glyph';
+      glyph.textContent = isUnlocked ? starNodeGlyph(levelId) : LOCKED_ICON;
+
+      const name = document.createElement('span');
+      name.className = 'star-node-name';
+      name.textContent = starNodeName(levelId);
 
       const number = document.createElement('span');
       number.className = 'star-node-number';
       number.textContent = String(levelId);
-      item.appendChild(number);
+
+      button.append(glyph, name, number);
+      item.appendChild(button);
 
       if (isLevelCleared(levelId)) {
         const badge = document.createElement('span');
@@ -1797,13 +1916,69 @@
         list.appendChild(node);
       }
       renderLevelDetail();
-      // The map is wider than the screen, so the level the detail card is
-      // describing has to be brought into view or the child sees a card for a
-      // planet they cannot find.
+      // The map is taller than a tablet screen, so the level the detail card
+      // describes has to be brought into view or the child sees a card for a
+      // constellation they cannot find.
       if (selectedNode !== null) {
-        selectedNode.scrollIntoView({ block: 'nearest', inline: 'center' });
+        selectedNode.scrollIntoView({ block: 'center', inline: 'nearest' });
       }
+      window.requestAnimationFrame(renderStarMapLines);
       gameState.justClearedLevelId = null;
+    }
+
+    function clearStarMapLines() {
+      elementById('star-map-lines').replaceChildren();
+    }
+
+    const CURVE_BEND_RATIO = 0.22;
+    const MIN_CURVE_BEND_PX = 8;
+    const MAX_CURVE_BEND_PX = 28;
+
+    // A quadratic Bezier whose control point is pushed off the midpoint
+    // perpendicular to the segment, so every hop bows like a road instead of
+    // running straight. The bend is proportional to the segment length but
+    // clamped, so a short hop still curves visibly and a long one does not
+    // balloon off the frame.
+    function buildConnectorPath(fromRect, toRect, frameRect) {
+      const x1 = fromRect.left + fromRect.width / 2 - frameRect.left;
+      const y1 = fromRect.top + fromRect.height / 2 - frameRect.top;
+      const x2 = toRect.left + toRect.width / 2 - frameRect.left;
+      const y2 = toRect.top + toRect.height / 2 - frameRect.top;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const length = Math.hypot(dx, dy) || 1;
+      const bend = Math.min(
+        MAX_CURVE_BEND_PX,
+        Math.max(MIN_CURVE_BEND_PX, length * CURVE_BEND_RATIO),
+      );
+      const controlX = (x1 + x2) / 2 + (-dy / length) * bend;
+      const controlY = (y1 + y2) / 2 + (dx / length) * bend;
+      return `M ${x1} ${y1} Q ${controlX} ${controlY} ${x2} ${y2}`;
+    }
+
+    // Connectors cannot be CSS pseudo-elements: the climb needs curves whose
+    // control points depend on the row height and the per-node ratio, and those
+    // change with the viewport. An inline SVG recomputed from the laid-out node
+    // positions stays attached at every width — and it is still zero external
+    // resources.
+    function renderStarMapLines() {
+      const svg = elementById('star-map-lines');
+      const frame = elementById('star-map-frame');
+      clearStarMapLines();
+      const frameRect = frame.getBoundingClientRect();
+      svg.setAttribute('viewBox', `0 0 ${frameRect.width} ${frameRect.height}`);
+      const nodes = [...elementById('star-map').querySelectorAll('.star-node')];
+      for (let index = 1; index < nodes.length; index += 1) {
+        const from = nodes[index - 1].getBoundingClientRect();
+        const to = nodes[index].getBoundingClientRect();
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', buildConnectorPath(from, to, frameRect));
+        path.setAttribute(
+          'class',
+          isLevelCleared(index) ? 'star-map-path is-cleared' : 'star-map-path',
+        );
+        svg.appendChild(path);
+      }
     }
 
     function firstPlayableLevelId() {
@@ -1822,7 +1997,7 @@
 
       const heading = document.createElement('h2');
       heading.className = 'level-detail-heading';
-      heading.textContent = `第 ${levelId} 关 · ${LEVEL_TITLES[levelId]}`;
+      heading.textContent = `第 ${levelId} 关 · ${starNodeName(levelId)} · ${LEVEL_TITLES[levelId]}`;
       fragment.appendChild(heading);
 
       const stars = document.createElement('p');
@@ -2532,6 +2707,7 @@
       document.addEventListener('pointerdown', primeAudioContext);
       document.addEventListener('keydown', primeAudioContext);
       document.addEventListener('keydown', handlePhysicalKey);
+      window.addEventListener('resize', renderStarMapLines);
       goToLevelMap();
     }
 
