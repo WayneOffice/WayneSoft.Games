@@ -174,7 +174,9 @@
         padding: 0;
         display: grid;
         grid-template-columns: 1fr;
-        row-gap: 10px;
+        /* Wide enough that the rocket on a selected palace (top: -22px) clears
+           the star badge of the row above it. */
+        row-gap: 22px;
       }
 
       .star-node {
@@ -205,6 +207,16 @@
         line-height: 1;
       }
 
+      /* A corner badge, not the main content: a locked palace still shows the
+         zodiac symbol it will hold, so the climb reads as twelve houses. */
+      .star-node-lock {
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        font-size: 14px;
+        line-height: 1;
+      }
+
       .star-node-name {
         font-size: 12px;
         color: var(--text-dim);
@@ -224,6 +236,8 @@
       }
 
       .star-node-button {
+        /* The lock badge is absolutely positioned against this button. */
+        position: relative;
         /* min-width, not width: the constellation name (白羊宫) is wider than
            64px and must not overflow the rounded border. */
         min-width: var(--touch-target);
@@ -239,6 +253,7 @@
         background: var(--space-panel);
         color: var(--text-bright);
         cursor: pointer;
+        transition: transform 0.12s ease, box-shadow 0.12s ease;
       }
 
       .star-node.is-pope .star-node-button {
@@ -1786,6 +1801,7 @@
     const STAR_MAP_STATE_LOCKED = 'is-locked';
     const STAR_MAP_STATE_JUST_CLEARED = 'is-just-cleared';
     const LOCKED_ICON = '🔒';
+    const STAR_MAP_LOCKED_LABEL_SUFFIX = '（未解锁）';
     const CHALLENGE_BEST_SCORE_TEMPLATE = '最高 {score} 题';
     const CHALLENGE_UNPLAYED_TEXT = '60 秒内答对越多越好';
 
@@ -1874,15 +1890,25 @@
       button.type = 'button';
       button.className = 'star-node-button';
       button.disabled = !isUnlocked;
+      const label = `第 ${levelId} 关 ${starNodeName(levelId)} ${LEVEL_TITLES[levelId]}`;
+      // The lock badge is decorative (aria-hidden is not enough: the padlock is
+      // the only signal that a level cannot be opened), so the label says it.
       button.setAttribute(
         'aria-label',
-        `第 ${levelId} 关 ${starNodeName(levelId)} ${LEVEL_TITLES[levelId]}`,
+        isUnlocked ? label : `${label}${STAR_MAP_LOCKED_LABEL_SUFFIX}`,
       );
       button.addEventListener('click', () => selectLevel(levelId));
 
       const glyph = document.createElement('span');
       glyph.className = 'star-node-glyph';
-      glyph.textContent = isUnlocked ? starNodeGlyph(levelId) : LOCKED_ICON;
+      glyph.textContent = starNodeGlyph(levelId);
+
+      // The lock marks the state; it must not replace the constellation, or a
+      // child cannot see which of the twelve houses they are climbing toward.
+      const lock = document.createElement('span');
+      lock.className = 'star-node-lock';
+      lock.textContent = LOCKED_ICON;
+      lock.hidden = isUnlocked;
 
       const name = document.createElement('span');
       name.className = 'star-node-name';
@@ -1892,7 +1918,7 @@
       number.className = 'star-node-number';
       number.textContent = String(levelId);
 
-      button.append(glyph, name, number);
+      button.append(glyph, name, number, lock);
       item.appendChild(button);
 
       if (isLevelCleared(levelId)) {
@@ -1930,9 +1956,9 @@
       elementById('star-map-lines').replaceChildren();
     }
 
-    const CURVE_BEND_RATIO = 0.22;
+    const CURVE_BEND_RATIO = 0.16;
     const MIN_CURVE_BEND_PX = 8;
-    const MAX_CURVE_BEND_PX = 28;
+    const MAX_CURVE_BEND_PX = 44;
 
     // A quadratic Bezier whose control point is pushed off the midpoint
     // perpendicular to the segment, so every hop bows like a road instead of
