@@ -276,7 +276,7 @@ test('answerOfQuestion is the single source of truth for answers', () => {
 test('the zodiac map places levels bottom-up in a winding climb', () => {
   assert.equal(logic.starNodeRatio(1), 0.22);
   assert.equal(logic.starNodeRatio(12), 0.66);
-  assert.equal(logic.starNodeRatio(13), 0.5);
+  assert.equal(logic.starNodeRatio(logic.TIMED_CHALLENGE_LEVEL_ID), 0.5);
   for (let levelId = 1; levelId <= logic.ZODIAC_LEVEL_COUNT; levelId += 1) {
     const ratio = logic.starNodeRatio(levelId);
     assert.ok(
@@ -284,10 +284,16 @@ test('the zodiac map places levels bottom-up in a winding climb', () => {
       `level ${levelId} must sit strictly inside the frame, got ${ratio}`,
     );
   }
-  // Level 1 sits in the last row, level 12 in the first row below the Pope.
+  // Level 1 sits in the last row and level 12 in the first row below the Pope,
+  // so the climb ends exactly where the Pope's own row begins.
   assert.equal(logic.starNodeRow(1), 7);
   assert.equal(logic.starNodeRow(2), 7);
   assert.equal(logic.starNodeRow(3), 6);
+  assert.equal(logic.starNodeRow(12), 2);
+  // Pinned on its own rather than left to the formula: today the formula also
+  // yields 1 for level 13, so without this nothing would notice POPE_ROW
+  // drifting away from what the zodiac formula produces.
+  assert.equal(logic.starNodeRow(logic.TIMED_CHALLENGE_LEVEL_ID), 1);
 });
 
 test('each zodiac level has a glyph and a name', () => {

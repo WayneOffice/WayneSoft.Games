@@ -174,9 +174,11 @@
         padding: 0;
         display: grid;
         grid-template-columns: 1fr;
-        /* Wide enough that the rocket on a selected palace (top: -22px) clears
-           the star badge of the row above it. */
-        row-gap: 22px;
+        /* 26px, not the rocket's own 22px offset: the emoji's ink starts inside
+           its line box and ship-bob lifts it another 4px, so at the bob peak a
+           22px gap lets the rocket touch the star badge of the row above. The
+           scroll container reserves this same 26px for the top row. */
+        row-gap: 26px;
       }
 
       .star-node {
@@ -1863,36 +1865,17 @@
       return ZODIAC_NAMES[levelId - 1];
     }
 
-    function buildStarMapNode(levelId) {
-      const state = levelState(levelId);
-      const isUnlocked = state !== STAR_MAP_STATE_LOCKED;
-      const item = document.createElement('li');
-      item.className = `star-node ${state}`;
-      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
-        item.classList.add('is-pope');
-      }
-      item.style.gridRow = String(starNodeRow(levelId));
-      item.style.setProperty('--node-ratio', `${starNodeRatio(levelId) * 100}%`);
-      if (levelId === gameState.justClearedLevelId) {
-        item.classList.add(STAR_MAP_STATE_JUST_CLEARED);
-      }
-
-      if (levelId === gameState.selectedLevelId) {
-        const ship = document.createElement('span');
-        ship.className = 'star-node-ship';
-        ship.textContent = SHIP_ICON;
-        item.appendChild(ship);
-      }
-
-      // The whole node is the tap target: a 7-year-old is more likely to tap
-      // the constellation name they can read than the small glyph.
+    // The whole node is the tap target: a 7-year-old is more likely to tap the
+    // constellation name they can read than the small glyph.
+    function buildStarNodeButton(levelId, isUnlocked) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'star-node-button';
       button.disabled = !isUnlocked;
       const label = `第 ${levelId} 关 ${starNodeName(levelId)} ${LEVEL_TITLES[levelId]}`;
-      // The lock badge is decorative (aria-hidden is not enough: the padlock is
-      // the only signal that a level cannot be opened), so the label says it.
+      // The padlock is the visual marker that a level cannot be opened; the
+      // label repeats its meaning in words, because the glyph alone does not
+      // say "locked" to a screen reader.
       button.setAttribute(
         'aria-label',
         isUnlocked ? label : `${label}${STAR_MAP_LOCKED_LABEL_SUFFIX}`,
@@ -1919,7 +1902,31 @@
       number.textContent = String(levelId);
 
       button.append(glyph, name, number, lock);
-      item.appendChild(button);
+      return button;
+    }
+
+    function buildStarMapNode(levelId) {
+      const state = levelState(levelId);
+      const isUnlocked = state !== STAR_MAP_STATE_LOCKED;
+      const item = document.createElement('li');
+      item.className = `star-node ${state}`;
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        item.classList.add('is-pope');
+      }
+      item.style.gridRow = String(starNodeRow(levelId));
+      item.style.setProperty('--node-ratio', `${starNodeRatio(levelId) * 100}%`);
+      if (levelId === gameState.justClearedLevelId) {
+        item.classList.add(STAR_MAP_STATE_JUST_CLEARED);
+      }
+
+      if (levelId === gameState.selectedLevelId) {
+        const ship = document.createElement('span');
+        ship.className = 'star-node-ship';
+        ship.textContent = SHIP_ICON;
+        item.appendChild(ship);
+      }
+
+      item.appendChild(buildStarNodeButton(levelId, isUnlocked));
 
       if (isLevelCleared(levelId)) {
         const badge = document.createElement('span');
