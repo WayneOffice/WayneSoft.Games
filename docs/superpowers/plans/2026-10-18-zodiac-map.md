@@ -1072,11 +1072,11 @@ git commit -m "feat: 存档 schemaVersion 与 v2→v3 迁移，支持多步错�
   - `renderStarMapLines(): void` / `clearStarMapLines(): void`
   - `buildStarMapNode(levelId)` 现在渲染星座徽记 + 中文名，并让**整个节点**可点
 
-**布局规则（写死，不留歧义）：** 十二宫排成 **2 列 × 6 行**，自下而上蛇形；教皇厅**单独占第 1 行、横跨两列**。
+**布局规则（写死，不留歧义）：** 十二宫排成 **6 行**，自下而上；教皇厅占第 1 行居中。
 
-- 十二宫第 `N` 关：列 = `(N - 1) % 2 + 1`（奇数列 1、偶数列 2），行 = `ZODIAC_ROW_COUNT + 1 - Math.floor((N - 1) / 2)`。
-- 教皇厅（第 13 关）：行 1，`grid-column: 1 / -1`。
-- 结果：第 1 关在**左下**、第 2 关右下、第 3 关左上 …… 第 12 关在顶部，教皇厅在它上面居中。
+- 行：十二宫第 `N` 关在第 `ZODIAC_ROW_COUNT + 1 - floor((N-1)/2)` 行；教皇厅在第 1 行。
+- 列方向**不用两等分网格**，而是每关一个手调的横向比例 `starNodeRatio(levelId)`（0–1），让同一行的两座宫殿间距各不相同——**这是「山上的宫殿」而不是「两列梯子」的关键**。
+- 结果：第 1 关在底部偏左、第 12 关在顶部偏右，教皇厅居中最上；整体读起来是一条蜿蜒向上的山道。
 
 - [ ] **Step 1: 替换地图标记**
 
@@ -1096,15 +1096,22 @@ git commit -m "feat: 存档 schemaVersion 与 v2→v3 迁移，支持多步错�
 在 `tests/question-generator.test.js` 末尾追加：
 
 ```js
-test('the zodiac map places levels bottom-up in a two-column snake', () => {
-  assert.equal(logic.starNodeColumn(1), 1);
-  assert.equal(logic.starNodeColumn(2), 2);
-  assert.equal(logic.starNodeColumn(3), 1);
-  assert.equal(logic.starNodeColumn(12), 2);
-  // Level 1 sits in the last row, level 12 in the first row below the Pope.
+test('the zodiac map places levels bottom-up with hand-tuned horizontal ratios', () => {
+  // Rows still carry the climb; the horizontal positions are deliberately
+  // uneven so the palaces read as a mountain path, not a two-column ladder.
   assert.equal(logic.starNodeRow(1), 7);
   assert.equal(logic.starNodeRow(2), 7);
   assert.equal(logic.starNodeRow(3), 6);
+  assert.equal(logic.starNodeRow(12), 2);
+  assert.equal(logic.starNodeRow(logic.TIMED_CHALLENGE_LEVEL_ID), 1);
+
+  assert.equal(logic.starNodeRatio(1), 0.22);
+  assert.equal(logic.starNodeRatio(12), 0.66);
+  assert.equal(logic.starNodeRatio(logic.TIMED_CHALLENGE_LEVEL_ID), 0.5);
+  for (let levelId = 1; levelId <= logic.ZODIAC_LEVEL_COUNT; levelId += 1) {
+    const ratio = logic.starNodeRatio(levelId);
+    assert.ok(ratio > 0 && ratio < 1, `level ${levelId} ratio out of range: ${ratio}`);
+  }
 });
 
 test('each zodiac level has a glyph and a name', () => {
@@ -1133,8 +1140,19 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
 2. 在 `game-logic` 中加入（纯函数，可被测试直接调用）：
 
 ```js
-    function starNodeColumn(levelId) {
-      return (levelId - 1) % 2 + 1;
+    // Hand-tuned so consecutive palaces are not evenly spaced: the eye reads a
+    // winding climb rather than a two-column ladder. Index is levelId - 1.
+    const ZODIAC_NODE_RATIO = [
+      0.22, 0.64, 0.18, 0.78, 0.30, 0.72,
+      0.16, 0.60, 0.24, 0.84, 0.20, 0.66,
+    ];
+    const POPE_NODE_RATIO = 0.5;
+
+    function starNodeRatio(levelId) {
+      if (levelId === TIMED_CHALLENGE_LEVEL_ID) {
+        return POPE_NODE_RATIO;
+      }
+      return ZODIAC_NODE_RATIO[levelId - 1];
     }
 
     function starNodeRow(levelId) {
@@ -1145,10 +1163,10 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
     }
 ```
 
-3. **把这两个名字加进测试加载器**——Step 2 的测试直接调用它们，不加进 `EXPORTED_NAMES` 会一直是 `undefined`，Step 7 的 PASS 永远到不了。在 `tests/game-script-loader.js` 的 `EXPORTED_NAMES` 里加入：
+3. **把 `starNodeRatio` 与 `starNodeRow` 加进测试加载器**——Step 2 的测试直接调用它们，不加进 `EXPORTED_NAMES` 会一直是 `undefined`，Step 7 的 PASS 永远到不了。在 `tests/game-script-loader.js` 的 `EXPORTED_NAMES` 里加入：
 
 ```js
-  'starNodeColumn',
+  'starNodeRatio',
   'starNodeRow',
 ```
 
@@ -1180,9 +1198,7 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
         item.classList.add('is-pope');
       }
       item.style.gridRow = String(starNodeRow(levelId));
-      item.style.gridColumn = levelId === TIMED_CHALLENGE_LEVEL_ID
-        ? '1 / -1'
-        : String(starNodeColumn(levelId));
+      item.style.setProperty('--node-ratio', `${starNodeRatio(levelId) * 100}%`);
       if (levelId === gameState.justClearedLevelId) {
         item.classList.add(STAR_MAP_STATE_JUST_CLEARED);
       }
@@ -1268,6 +1284,30 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
     // angle depends on the row height and column width, and those change with
     // the viewport. An inline SVG recomputed from the laid-out node positions
     // stays attached at every width — and it is still zero external resources.
+    const CURVE_BEND_RATIO = 0.22;
+    const MIN_CURVE_BEND_PX = 8;
+    const MAX_CURVE_BEND_PX = 28;
+
+    // A straight line between two palaces reads as a wiring diagram; a road up
+    // a mountain curves. The control point is pushed perpendicular to the
+    // segment so every hop bows, whichever direction it runs.
+    function buildConnectorPath(fromRect, toRect, frameRect) {
+      const x1 = fromRect.left + fromRect.width / 2 - frameRect.left;
+      const y1 = fromRect.top + fromRect.height / 2 - frameRect.top;
+      const x2 = toRect.left + toRect.width / 2 - frameRect.left;
+      const y2 = toRect.top + toRect.height / 2 - frameRect.top;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const length = Math.hypot(dx, dy) || 1;
+      const bend = Math.min(
+        MAX_CURVE_BEND_PX,
+        Math.max(MIN_CURVE_BEND_PX, length * CURVE_BEND_RATIO),
+      );
+      const controlX = (x1 + x2) / 2 + (-dy / length) * bend;
+      const controlY = (y1 + y2) / 2 + (dx / length) * bend;
+      return `M ${x1} ${y1} Q ${controlX} ${controlY} ${x2} ${y2}`;
+    }
+
     function renderStarMapLines() {
       const svg = elementById('star-map-lines');
       const frame = elementById('star-map-frame');
@@ -1276,18 +1316,20 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
       svg.setAttribute('viewBox', `0 0 ${frameRect.width} ${frameRect.height}`);
       const nodes = [...elementById('star-map').querySelectorAll('.star-node')];
       for (let index = 1; index < nodes.length; index += 1) {
-        const from = nodes[index - 1].getBoundingClientRect();
-        const to = nodes[index].getBoundingClientRect();
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', String(from.left + from.width / 2 - frameRect.left));
-        line.setAttribute('y1', String(from.top + from.height / 2 - frameRect.top));
-        line.setAttribute('x2', String(to.left + to.width / 2 - frameRect.left));
-        line.setAttribute('y2', String(to.top + to.height / 2 - frameRect.top));
-        line.setAttribute(
-          'class',
-          isLevelCleared(index) ? 'star-map-line is-cleared' : 'star-map-line',
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute(
+          'd',
+          buildConnectorPath(
+            nodes[index - 1].getBoundingClientRect(),
+            nodes[index].getBoundingClientRect(),
+            frameRect,
+          ),
         );
-        svg.appendChild(line);
+        path.setAttribute(
+          'class',
+          isLevelCleared(index) ? 'star-map-path is-cleared' : 'star-map-path',
+        );
+        svg.appendChild(path);
       }
     }
 ```
@@ -1354,13 +1396,14 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
         pointer-events: none;
       }
 
-      .star-map-line {
+      .star-map-path {
+        fill: none;
         stroke: var(--space-line);
         stroke-width: 2;
         stroke-linecap: round;
       }
 
-      .star-map-line.is-cleared {
+      .star-map-path.is-cleared {
         stroke: var(--glow-cyan);
         filter: drop-shadow(0 0 4px rgb(var(--glow-cyan-rgb) / 0.8));
       }
@@ -1371,13 +1414,16 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
         margin: 0;
         padding: 0;
         display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        grid-auto-rows: minmax(96px, auto);
-        gap: 12px 28px;
-        justify-items: center;
+        grid-template-columns: 1fr;
+        row-gap: 10px;
       }
 
       .star-node {
+        justify-self: start;
+        /* The ratio is set per node from starNodeRatio(); translating by half
+           the node's own width centres it on that point. */
+        margin-left: var(--node-ratio);
+        transform: translateX(-50%);
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -1386,7 +1432,6 @@ Expected: FAIL —— `logic.starNodeColumn is not a function`.
       }
 
       .star-node.is-pope {
-        grid-column: 1 / -1;
         margin-bottom: 8px;
       }
 
@@ -1780,8 +1825,8 @@ git commit -m "chore: 十二宫地图与 13 关的实现收尾"
 
 - [ ] **Step 5: 地图专属验收（spec §9.11–9.16）**
 
-- [ ] 13 个节点按蛇形排布：第 1 关在左下、第 2 关右下、第 3 关左上……第 12 关在顶部，教皇厅居中最上。**不在一条直线上。**
-- [ ] 连线从节点连到节点，不断开、不压在星座名上。
+- [ ] 13 个节点按蛇形排布：第 1 关在底部偏左、第 12 关在顶部偏右，教皇厅居中最上。**不在一条直线上，同一行的两座宫殿间距不相等。**
+- [ ] 连线是**弯的**，从节点连到节点，不断开、不压在星座名上；路径没有填充色（`fill: none`）。
 - [ ] **把窗口缩到 600px 宽**，连线仍然连着。
 - [ ] 点**星座名文字**与点徽记效果相同。
 - [ ] 选中靠上的节点后，「开始」按钮的矩形仍在视口内。
